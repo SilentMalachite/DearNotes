@@ -58,6 +58,8 @@ tasks.named<JavaExec>("run") {
 tasks.test {
     useJUnitPlatform()
     jvmArgs("--enable-native-access=ALL-UNNAMED")
+    // CI のログで、失敗したテストの期待値と実際の値、メッセージまで読めるようにする
+    testLogging { exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL }
 }
 
 tasks.jar {

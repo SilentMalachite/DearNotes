@@ -479,7 +479,7 @@ final class BlockView extends HBox {
     }
 
     /** クリップボードに、RichTextFX がコピーした装飾つきの文字があるか（ほかのアプリの文字は装飾なし）。 */
-    private boolean styledClipboard() {
+    boolean styledClipboard() {
         return area.getStyleCodecs().map(codecs -> {
             String name = ReadOnlyStyledDocument.codec(codecs._1, codecs._2, area.getSegOps()).getName();
             DataFormat format = DataFormat.lookupMimeType(name);
