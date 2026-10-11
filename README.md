@@ -47,7 +47,20 @@ JDK 25 が要ります。JavaFX は Gradle が取ってくるので、JavaFX 入
 - アイコンを付けるときは `packaging/mac/DearNotes.icns` と `packaging/win/DearNotes.ico` を置きます
 - 版は `build.gradle.kts` の `version` で決まります。Windows の `--win-upgrade-uuid` は変えないでください（新しい版が古い版を置き換えるのに使います）
 
-GitHub に `v1.0.0` のようなタグを push すると、`.github/workflows/release.yml` が macOS（Apple Silicon）と Windows でインストーラーを作り、Artifacts に置きます。Intel Mac はサポート外です。
+### リリースする
+
+GitHub に `v1.0.0` のようなタグを push すると、`.github/workflows/release.yml` が macOS（Apple Silicon）と Windows でインストーラーを作り、GitHub Release に付けて公開します。Release の本文は、CHANGELOG.md のその版の節から作ります。Intel Mac はサポート外です。
+
+1. `build.gradle.kts` の `version` を新しい版にする
+2. CHANGELOG.md の `[Unreleased]` の中身を、新しい版の節（`## [1.2.3] - 日付`）に移し、末尾の比較リンクも足す
+3. この2つを main にマージしてから、タグを付けて push する
+
+```sh
+git tag -a v1.2.3 -m "DearNotes 1.2.3"
+git push origin v1.2.3
+```
+
+タグと `version` が違うときや、CHANGELOG.md にその版の節がないときは、Release を作らずに失敗します。Actions の画面から手で動かしたときは、インストーラーを Artifacts に置くだけです。
 
 ## 署名していないアプリを開く
 
