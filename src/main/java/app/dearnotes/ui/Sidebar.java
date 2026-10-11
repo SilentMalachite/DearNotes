@@ -42,6 +42,8 @@ final class Sidebar extends VBox {
         void trash(Page p);
         void showTrash();
         void showSearch();
+        void exportPage(Page p);
+        void exportTree(Page p);
     }
 
     enum Drop { BEFORE, INTO, AFTER }
@@ -323,9 +325,14 @@ final class Sidebar extends VBox {
                 expanded.add(p.id());
                 actions.newPage(p.id());
             });
+            var one = new MenuItem("Markdown で書き出す…");
+            one.setOnAction(e -> actions.exportPage(p));
+            var tree = new MenuItem("子ページごと書き出す…");
+            tree.setOnAction(e -> actions.exportTree(p));
+            tree.setVisible(alive.stream().anyMatch(c -> p.id().equals(c.parentId())));
             var trash = new MenuItem("ゴミ箱へ移動");
             trash.setOnAction(e -> actions.trash(p));
-            return new ContextMenu(child, new SeparatorMenuItem(), trash);
+            return new ContextMenu(child, new SeparatorMenuItem(), one, tree, new SeparatorMenuItem(), trash);
         }
     }
 }

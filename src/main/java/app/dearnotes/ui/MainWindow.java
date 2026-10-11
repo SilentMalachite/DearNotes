@@ -1,13 +1,23 @@
 package app.dearnotes.ui;
 
 import app.dearnotes.db.SearchRepo.Hit;
+import app.dearnotes.export.ExportTree;
+import app.dearnotes.export.MarkdownWriter;
 import app.dearnotes.model.Page;
+import java.io.File;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Optional;
+import java.util.concurrent.TimeUnit;
 import java.util.prefs.Preferences;
 import java.util.stream.Collectors;
 import javafx.geometry.Pos;
 import javafx.scene.Scene;
+import javafx.scene.control.Alert;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
 import javafx.scene.control.ScrollPane;
@@ -20,6 +30,8 @@ import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.StackPane;
+import javafx.stage.DirectoryChooser;
+import javafx.stage.FileChooser;
 import javafx.stage.Stage;
 
 /** 左にサイドバー、右に開いているページ。 */
@@ -28,6 +40,7 @@ public final class MainWindow implements Sidebar.Actions {
     // 別のデータフォルダで試すときは、前回のページも別に覚える
     private static final String LAST_PAGE = System.getProperty("dearnotes.dataDir") == null
         ? "lastPageId" : "lastPageId@" + Integer.toHexString(System.getProperty("dearnotes.dataDir").hashCode());
+    private static final String EXPORT_DIR = "exportDir";
 
     private final Services s;
     private final Stage stage;
@@ -88,6 +101,11 @@ public final class MainWindow implements Sidebar.Actions {
             new KeyCodeCombination(KeyCode.D, KeyCombination.SHORTCUT_DOWN, KeyCombination.SHIFT_DOWN), this::openToday);
         scene.getAccelerators().put(
             new KeyCodeCombination(KeyCode.O, KeyCombination.SHORTCUT_DOWN, KeyCombination.SHIFT_DOWN), this::toggleOutline);
+        scene.getAccelerators().put(
+            new KeyCodeCombination(KeyCode.E, KeyCombination.SHORTCUT_DOWN, KeyCombination.SHIFT_DOWN), () -> {
+                Page current = editor.page();
+                if (current != null) exportPage(current);
+            });
         stage.setScene(scene);
         stage.setTitle("DearNotes");
         stage.setMinWidth(640);
@@ -212,6 +230,73 @@ public final class MainWindow implements Sidebar.Actions {
         boolean currentGone = current != null && Errors.get("ページを読む",
             () -> s.pages().get(current.id()).map(Page::isTrashed).orElse(true)).orElse(true);
         if (currentGone) openInitialPage();
+    }
+
+    @Override
+    public void exportPage(Page p) {
+        Page page = beforeExport(p);
+        if (page == null) return;
+        var chooser = new FileChooser();
+        chooser.setTitle("Markdown で書き出す");
+        chooser.setInitialFileName(ExportTree.fileName(page) + ".md");
+        chooser.getExtensionFilters().add(new FileChooser.ExtensionFilter("Markdown", "*.md"));
+        lastExportDir().ifPresent(chooser::setInitialDirectory);
+        // 同じ名前のファイルがあれば、上書きするかは OS の窓が尋ねる
+        File file = chooser.showSaveDialog(stage);
+        if (file == null) return;
+        prefs.put(EXPORT_DIR, file.getParent());
+        Errors.get("ページを読む", () -> s.blocks().listByPage(page.id())).ifPresent(blocks -> {
+            try {
+                Files.writeString(file.toPath(), MarkdownWriter.write(page, blocks), StandardCharsets.UTF_8);
+            } catch (IOException e) {
+                Errors.show("書き出し", e);
+            }
+        });
+    }
+
+    @Override
+    public void exportTree(Page p) {
+        Page page = beforeExport(p);
+        if (page == null) return;
+        var chooser = new DirectoryChooser();
+        chooser.setTitle("子ページごと書き出す先のフォルダ");
+        lastExportDir().ifPresent(chooser::setInitialDirectory);
+        File dir = chooser.showDialog(stage);
+        if (dir == null) return;
+        prefs.put(EXPORT_DIR, dir.getPath());
+        List<Page> alive = Errors.get("ページの一覧を読む", s.pages()::listAlive).orElse(null);
+        if (alive == null) return;
+        try {
+            List<Path> written = ExportTree.write(dir.toPath(), page, alive, s.blocks()::listByPage);
+            var done = new Alert(Alert.AlertType.INFORMATION);
+            done.initOwner(stage);
+            done.setTitle("DearNotes");
+            done.setHeaderText(written.size() + " ページを書き出しました");
+            done.setContentText(written.getFirst().getParent().toString());
+            done.show();
+        } catch (ExportTree.ExportException e) {
+            // 書けたファイルは残すので、どこに何ページ書けたかも知らせる
+            String message = e.written().isEmpty() ? e.getMessage()
+                : e.written().size() + " ページは " + e.written().getFirst().getParent() + " に書けています。\n"
+                    + e.getMessage();
+            Errors.show("書き出し", new IOException(message, e));
+        }
+    }
+
+    /** 書きかけを保存し、名前を DB から読み直す。保存できなければ書き出さずに null。 */
+    private Page beforeExport(Page p) {
+        editor.saveTitle();
+        if (!s.saver().flushAndWait(3, TimeUnit.SECONDS)) {
+            Errors.warn("書き出せませんでした",
+                "まだ保存できていない変更があります。少し待ってからもう一度試してください。");
+            return null;
+        }
+        return Errors.get("ページを読む", () -> s.pages().get(p.id()).orElse(null)).orElse(null);
+    }
+
+    /** 前に書き出したフォルダ。消えていれば空。 */
+    private Optional<File> lastExportDir() {
+        return Optional.ofNullable(prefs.get(EXPORT_DIR, null)).map(File::new).filter(File::isDirectory);
     }
 
     @Override

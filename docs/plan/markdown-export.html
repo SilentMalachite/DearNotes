@@ -1,0 +1,414 @@
+<!doctype html>
+<html lang="ja">
+<meta charset="utf-8">
+<title>Markdown Export</title>
+<link rel="stylesheet" href="htmlplan.css">
+<script src="htmlplan.js" defer></script>
+<style data-mock-shared>
+  .ui { font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic UI", "Segoe UI", sans-serif; color: #37352f; background: #fff; border: 1px solid #e3e2de; border-radius: 10px; overflow: hidden; }
+  .ui .side { background: #f7f6f3; padding: 10px 8px; font-size: 13px; position: relative; height: 230px; }
+  .ui .sec { color: #9b9a97; font-size: 11.5px; padding: 6px 6px 2px; }
+  .ui .pg { padding: 3px 6px; border-radius: 4px; } .ui .pg.c { padding-left: 22px; }
+  .ui .pg.sel { background: #e9e8e4; }
+  .ui .menu { position: absolute; left: 120px; top: 52px; width: 210px; background: #fff; border: 1px solid #d9d8d4; border-radius: 6px; box-shadow: 0 4px 14px rgba(0,0,0,.12); padding: 4px 0; font-size: 13px; }
+  .ui .menu .it { padding: 4px 12px; } .ui .menu .it.new { background: #e8f2fc; }
+  .ui .menu hr { border: 0; border-top: 1px solid #efeeea; margin: 4px 0; }
+  .ui .two { display: grid; grid-template-columns: 1fr 1fr; }
+  .ui .page { padding: 10px 14px; }
+  .ui .page h2 { font-size: 18px; margin: 0 0 4px; }
+  .ui .hh { font-size: 15px; font-weight: 700; margin-top: 4px; }
+  .ui .bul::before { content: "•  "; } .ui .in1 { padding-left: 18px; }
+  .ui .md { font: 12px/1.55 ui-monospace, Menlo, Consolas, monospace; background: #fbfbfa; border-left: 1px solid #efeeea; padding: 10px 12px; white-space: pre; color: #37352f; }
+  .ui .md .k { color: #b0569e; }
+  .ui .lab { font-size: 11px; color: #9b9a97; padding: 6px 14px 0; }
+  .ui code { background: #f1f1ef; border-radius: 3px; padding: 0 3px; color: #eb5757; font-size: 12.5px; }
+</style>
+<body>
+
+<header>
+  <h1>DearNotes のページを Markdown で書き出す</h1>
+  <doc-changes new="6" changed="4"></doc-changes>
+  <details class="thread"><summary>Why · 1 request</summary>
+    <doc-quote via="prompt" from="the user">入力して保存したものをマークダウン形式で外部に出力・保存できるようにしたい。</doc-quote>
+  </details>
+</header>
+
+<main>
+<doc-plan>
+
+<!-- ═════ 1 ═════ -->
+<doc-claim>
+  <p>ユーザーはページを右クリックして、Markdown ファイルに書き出せる。</p>
+  <doc-mock frame="none" w="420"><template>
+<div class="ui"><div class="side">
+  <div class="sec">ページ</div>
+  <div class="pg sel">🧳  旅行</div>
+  <div class="pg c">📝  京都</div>
+  <div class="pg c">📝  大阪</div>
+  <div class="pg">📝  読書メモ</div>
+  <div class="sec">デイリー</div>
+  <div class="pg">📅  2026-10-11</div>
+  <div class="menu">
+    <div class="it">子ページを追加</div>
+    <hr>
+    <div class="it new" data-ref="one">Markdown で書き出す…</div>
+    <div class="it new" data-ref="tree">子ページごと書き出す…</div>
+    <hr>
+    <div class="it">ゴミ箱へ移動</div>
+  </div>
+</div></div></template>
+    <doc-pin ref="one" anchor="r" title="1ページを1つの .md に">保存の窓で場所と名前を選ぶ。</doc-pin>
+    <doc-pin ref="tree" anchor="br" title="子ページがあるときだけ出る">フォルダを選ぶ。3 を見る。</doc-pin>
+  </doc-mock>
+
+  <doc-claim>
+    <p>右クリックのメニューに、書き出しの項目が2つ増える。</p>
+    <doc-code diff file="src/main/java/app/dearnotes/ui/Sidebar.java" lang="java" start="320">
+<script type="text/plain">
+@@ -320,10 +320,16 @@
+         private ContextMenu menuFor(Page p) {
+             var child = new MenuItem("子ページを追加");
+             child.setOnAction(e -> {
+                 expanded.add(p.id());
+                 actions.newPage(p.id());
+             });
++            var one = new MenuItem("Markdown で書き出す…");
++            one.setOnAction(e -> actions.exportPage(p));
++            var tree = new MenuItem("子ページごと書き出す…");
++            tree.setOnAction(e -> actions.exportTree(p));
++            tree.setVisible(hasChildren(p.id()));
+             var trash = new MenuItem("ゴミ箱へ移動");
+             trash.setOnAction(e -> actions.trash(p));
+-            return new ContextMenu(child, new SeparatorMenuItem(), trash);
++            return new ContextMenu(child, new SeparatorMenuItem(), one, tree,
++                new SeparatorMenuItem(), trash);
+         }
+</script>
+      <doc-pin line="326" title="Actions に exportPage と exportTree を足す">MainWindow が実装する。</doc-pin>
+    </doc-code>
+  </doc-claim>
+
+  <doc-claim>
+    <p>Cmd/Ctrl+Shift+E で、開いているページを書き出す。</p>
+    <doc-code diff wrap file="src/main/java/app/dearnotes/ui/MainWindow.java" lang="java" start="87">
+<script type="text/plain">
+@@ -87,5 +87,10 @@
+         scene.getAccelerators().put(
+             new KeyCodeCombination(KeyCode.D, KeyCombination.SHORTCUT_DOWN, KeyCombination.SHIFT_DOWN), this::openToday);
+         scene.getAccelerators().put(
+             new KeyCodeCombination(KeyCode.O, KeyCombination.SHORTCUT_DOWN, KeyCombination.SHIFT_DOWN), this::toggleOutline);
++        scene.getAccelerators().put(
++            new KeyCodeCombination(KeyCode.E, KeyCombination.SHORTCUT_DOWN, KeyCombination.SHIFT_DOWN), () -> {
++                Page current = editor.page();
++                if (current != null) exportPage(current);
++            });
+         stage.setScene(scene);
+</script>
+      <doc-pin line="92" title="BlockView は Shift 付きの E を使わない">BlockView.java:321 は null を返す。</doc-pin>
+    </doc-code>
+  </doc-claim>
+
+  <doc-claim>
+    <p>MainWindow は書きかけの変更を保存してから、DB から読んで書く。</p>
+    <doc-calls title="1ページを書き出す" caption="ゴミ箱へ移すときと同じく、先に AutoSaver を空にする。">
+<script type="text/plain">
+~ Sidebar.menuFor(p) / Cmd+Shift+E                       @ src/main/java/app/dearnotes/ui/Sidebar.java:320
++   MainWindow.**exportPage**(p)                         @ src/main/java/app/dearnotes/ui/MainWindow.java:215
+      PageEditor.saveTitle()
+      AutoSaver.flushAndWait(3, SECONDS)                 @ src/main/java/app/dearnotes/save/AutoSaver.java:85
+      PageRepo.get(id)                                   @ src/main/java/app/dearnotes/db/PageRepo.java:78   -- 新しい名前を読む
++     FileChooser.showSaveDialog(stage)
+      BlockRepo.listByPage(id)                           @ src/main/java/app/dearnotes/db/BlockRepo.java:21
++     **MarkdownWriter.write**(page, blocks)
++     Files.writeString(file, md, UTF_8)
+</script>
+    </doc-calls>
+    <doc-claim at="src/main/java/app/dearnotes/ui/MainWindow.java:215">
+      <p><b>MainWindow.java:215</b> · exportPage()</p>
+      <doc-code wrap title="MainWindow.java · sketch" lang="java" start="216">
+<script type="text/plain">
+@Override
+public void exportPage(Page p) {
+    editor.saveTitle();
+    if (!s.saver().flushAndWait(3, TimeUnit.SECONDS)) {
+        Errors.warn("書き出せませんでした", "まだ保存できていない変更があります。少し待ってからもう一度試してください。");
+        return;
+    }
+    Page page = Errors.get("ページを読む", () -> s.pages().get(p.id()).orElse(null)).orElse(null);
+    if (page == null) return;
+    var chooser = new FileChooser();
+    chooser.setTitle("Markdown で書き出す");
+    chooser.setInitialFileName(ExportTree.fileName(page) + ".md");
+    chooser.getExtensionFilters().add(new FileChooser.ExtensionFilter("Markdown", "*.md"));
+    File file = chooser.showSaveDialog(stage);
+    if (file == null) return;
+    Errors.get("ページを読む", () -> s.blocks().listByPage(page.id())).ifPresent(blocks -> {
+        try {
+            Files.writeString(file.toPath(), MarkdownWriter.write(page, blocks), StandardCharsets.UTF_8);
+        } catch (IOException e) {
+            Errors.show("書き出し", e);
+        }
+    });
+}
+</script>
+        <doc-pin line="219" tone="warn" title="保存できないときは書き出さない">古い中身を書かないため。</doc-pin>
+        <doc-pin line="229" title="同じ名前のファイルは OS の窓が尋ねる"></doc-pin>
+      </doc-code>
+    </doc-claim>
+  </doc-claim>
+</doc-claim>
+
+<!-- ═════ 2 ═════ -->
+<doc-claim>
+  <p>書き出したファイルは、ブロックの種類と装飾を Markdown の記号で書く。</p>
+  <doc-mock frame="none" w="480"><template>
+<div class="ui">
+  <div class="two">
+    <div><div class="lab">DearNotes</div><div class="page">
+      <h2>京都</h2>
+      <div class="hh">1日目</div>
+      <div class="bul">伏見稲荷へ <b>朝早く</b> 行く</div>
+      <div class="bul in1">お昼は錦市場</div>
+      <div>☑ 宿を予約する</div>
+      <div>地図は <code>maps.md</code> を見る</div>
+    </div></div>
+    <div><div class="lab">京都.md</div><div class="md" data-ref="md"><span class="k" data-ref="title"># </span>京都
+
+<span class="k">## </span>1日目
+
+<span class="k">- </span>伏見稲荷へ <span class="k">**</span>朝早く<span class="k">**</span> 行く
+  <span class="k">- </span>お昼は錦市場
+<span class="k">- [x] </span>宿を予約する
+
+地図は <span class="k">`</span>maps.md<span class="k">`</span> を見る
+</div></div>
+  </div>
+</div></template>
+    <doc-pin ref="title" anchor="tr" title="ページ名が先頭に来る">書き方は下の質問で決める。</doc-pin>
+  </doc-mock>
+  <doc-ask id="title">
+    <p>ページ名と日付を、ファイルの先頭にどう書きますか？</p>
+    <label><input type="radio" name="title" value="h1" checked> <code># ページ名</code> の1行 <small>見出し 1 のブロックと同じ段になる</small></label>
+    <label><input type="radio" name="title" value="yaml"> YAML front matter <small>title, created, updated。Obsidian などが読む</small></label>
+    <label><input type="radio" name="title" value="both"> 両方 <small>front matter の後に <code># ページ名</code></small></label>
+  </doc-ask>
+
+  <doc-claim>
+    <p><code>MarkdownWriter.write()</code> は、1ブロックを種類ごとの記号で書く。</p>
+    <doc-code title="MarkdownWriter.java · sketch" lang="java" start="30">
+<script type="text/plain">
+/** ページを Markdown にする。畳んだ行も書く。 */
+public static String write(Page page, List<Block> blocks) {
+    var out = new Out(header(page));
+    for (int i = 0; i < blocks.size(); i++) {
+        Block b = blocks.get(i);
+        String body = Inline.write(b.text(), b.marks());
+        switch (b.type()) {
+            case PARAGRAPH -> out.block(b, "", body);
+            case H1 -> out.block(b, "# ", body);
+            case H2 -> out.block(b, "## ", body);
+            case H3 -> out.block(b, "### ", body);
+            case BULLET -> out.item(b, "- ", body);
+            case NUMBERED -> out.item(b, BlockOps.listNumber(blocks, i) + ". ", body);
+            case TODO -> out.item(b, b.checked() ? "- [x] " : "- [ ] ", body);
+            case QUOTE -> out.block(b, "> ", body);
+            case CODE -> out.fence(b, b.text());
+            case DIVIDER -> out.block(b, "---", "");
+        }
+    }
+    return out.toString();
+}
+</script>
+      <doc-pin line="31" title="collapsed は見ない">畳んだ行の中身も全部書く。</doc-pin>
+      <doc-pin line="42" title="番号は今の画面と同じ数え方">BlockOps.listNumber() を使う。</doc-pin>
+      <doc-pin line="45" title="中に ``` があれば、囲みを長くする"></doc-pin>
+    </doc-code>
+  </doc-claim>
+
+  <doc-claim>
+    <p>字下げした行は、親のリスト項目の文字の位置にそろえる。</p>
+    <doc-code title="出力の例 · sketch" lang="markdown">
+<script type="text/plain">
+1. 準備
+   - 充電器
+   - 着替え
+     - 下着
+
+ここは段落。
+
+- 段落の下で字下げした項目
+
+> 引用の1行目\
+> 2行目（Shift+Enter の改行）
+</script>
+      <doc-pin line="2" title="「1. 」の下は3文字あける">CommonMark の入れ子の決まり。</doc-pin>
+      <doc-pin line="6" title="リストは続けて書き、ほかは空行で分ける">段落が前の行とつながらないため。</doc-pin>
+      <doc-pin line="8" title="親がリストでなければ字下げしない">空白4つはコードになるため。</doc-pin>
+      <doc-pin line="10" title="ブロックの中の改行は行末の \ にする"></doc-pin>
+    </doc-code>
+    <doc-note tone="warn"><strong>貼り直し</strong> PasteParser は空白2つを1段と読む。3段より深い番号付きリストは、貼り直すと段がずれることがある。</doc-note>
+  </doc-claim>
+
+  <doc-claim>
+    <p>入れ子の装飾は、開いた順と逆の順で閉じる。</p>
+    <doc-code title="InlineTest.java · sketch" lang="java">
+<script type="text/plain">
+@Test
+void nestedMarksCloseInReverseOrder() {
+    // 「あいうえお」の 0..5 が太字、2..3 が斜体
+    var marks = List.of(new Mark(0, 5, BOLD), new Mark(2, 3, ITALIC));
+    assertEquals("**あい*う*えお**", Inline.write("あいうえお", marks));
+}
+
+@Test
+void linkWithSchemeBecomesAutolink() {
+    var marks = List.of(new Mark(0, 19, LINK));
+    assertEquals("<https://example.com>", Inline.write("https://example.com", marks));
+}
+
+@Test
+void spacesMoveOutsideTheMarks() {
+    assertEquals(" **太字** ", Inline.write(" 太字 ", List.of(new Mark(0, 4, BOLD))));
+}
+</script>
+      <doc-pin line="2" tone="warn" title="一部だけ重なる装飾は、境目で閉じて開き直す">形はテストで決める。</doc-pin>
+      <doc-pin line="11" title="スキームがないリンクは [文字](文字)"></doc-pin>
+    </doc-code>
+    <doc-note tone="warn"><strong>日本語と強調</strong> <code>**「太字」**の</code> のように記号と文字が並ぶと、CommonMark は太字と読まない。今回は直さない。</doc-note>
+  </doc-claim>
+
+  <doc-claim>
+    <p>本文の中の Markdown の記号は、<code>\</code> を付けて守る。</p>
+    <doc-code title="Inline.java · sketch" lang="java">
+<script type="text/plain">
+private static final String SPECIAL = "\\`*_~[]<>";
+
+/** 装飾の外の文字。記号の前に \ を付ける。 */
+static String escape(String s) {
+    var sb = new StringBuilder(s.length());
+    for (char c : s.toCharArray()) {
+        if (SPECIAL.indexOf(c) >= 0) sb.append('\\');
+        sb.append(c);
+    }
+    return sb.toString();
+}
+
+/** 行頭で種類が変わる書き方（# - + > 1. ---）も守る。 */
+static String escapeLineStart(String line) { … }
+</script>
+      <doc-pin line="1" title="コードの中は守らない">コードブロックとインラインコードはそのまま。</doc-pin>
+    </doc-code>
+    <doc-ask id="escape">
+      <p>本文の中の <code>*</code> や <code>#</code> に <code>\</code> を付けますか？</p>
+      <label><input type="radio" name="escape" value="yes" checked> 付ける <small>表示は崩れない。テキストで読むと \ が見える</small></label>
+      <label><input type="radio" name="escape" value="no"> 付けない <small>テキストで読みやすい。表示が崩れることがある</small></label>
+    </doc-ask>
+  </doc-claim>
+</doc-claim>
+
+<!-- ═════ 3 ═════ -->
+<doc-claim>
+  <p>子ページごと書き出すと、フォルダの中に1ページ1ファイルで並ぶ。</p>
+  <doc-mock frame="terminal" title="選んだフォルダ" w="440"><template><span class="dim">$</span> tree ~/Desktop/旅行
+<b>~/Desktop/旅行</b>          <span class="dim"># 新しく作る。あれば「旅行 (2)」</span>
+├── 旅行.md
+├── 京都.md
+├── 大阪.md
+└── <b>大阪</b>
+    ├── 1日目.md
+    └── 1日目 (2).md     <span class="dim"># 同じ名前の兄弟</span>
+</template></doc-mock>
+  <doc-ask id="range">
+    <p>どの範囲を書き出せるようにしますか？</p>
+    <label><input type="radio" name="range" value="one"> このページだけ <small>claim 3 は無くなる</small></label>
+    <label><input type="radio" name="range" value="tree" checked> このページだけか、子ページごと <small>右クリックに2項目</small></label>
+    <label><input type="radio" name="range" value="all"> 上に加えて全ページ <small>「ページ」の見出しを右クリック</small></label>
+  </doc-ask>
+  <div data-if="range=all"><doc-note tone="info">全ページは「DearNotes 2026-10-11」フォルダに書く。日記は「デイリー」フォルダに入れる。</doc-note></div>
+
+  <doc-claim>
+    <p>ファイル名はページ名から作り、使えない文字を <code>_</code> に替える。</p>
+    <doc-code title="ExportTree.java · sketch" lang="java">
+<script type="text/plain">
+private static final Pattern BAD = Pattern.compile("[\\\\/:*?\"<>|\\p{Cntrl}]");
+private static final Set<String> RESERVED = Set.of("CON", "PRN", "AUX", "NUL",
+    "COM1", "COM2", "COM3", "LPT1", "LPT2", "LPT3");
+
+/** ページ名をファイル名にする。拡張子は付けない。 */
+public static String fileName(Page p) {
+    String name = BAD.matcher(p.displayTitle()).replaceAll("_").strip();
+    name = name.replaceAll("[. ]+$", "");           // Windows は末尾の . と空白を消す
+    if (name.isEmpty() || RESERVED.contains(name.toUpperCase(Locale.ROOT))) name = "_" + name;
+    return name.length() > 100 ? name.substring(0, 100) : name;
+}
+
+/** dir の中で使われていない名前。「京都」→「京都 (2)」。 */
+static String unique(Set<String> used, String name) { … }
+</script>
+      <doc-pin line="1" title="macOS と Windows の両方で使えない文字"></doc-pin>
+      <doc-pin line="10" tone="warn" title="長い名前は切る">パスの長さの上限を越えないため。</doc-pin>
+    </doc-code>
+  </doc-claim>
+
+  <doc-claim>
+    <p><code>ExportTree.write()</code> は新しいフォルダを作り、ファイルを上書きしない。</p>
+    <doc-calls title="子ページごと書き出す" caption="ページの木は、サイドバーと同じく listAlive() から作る。">
+<script type="text/plain">
+~ Sidebar.menuFor(p)                                     @ src/main/java/app/dearnotes/ui/Sidebar.java:320
++   MainWindow.**exportTree**(p)                         @ src/main/java/app/dearnotes/ui/MainWindow.java:215
+      AutoSaver.flushAndWait(3, SECONDS)                 @ src/main/java/app/dearnotes/save/AutoSaver.java:85
++     DirectoryChooser.showDialog(stage)
+      PageRepo.listAlive()                               @ src/main/java/app/dearnotes/db/PageRepo.java:83   -- ゴミ箱のページは入らない
++     **ExportTree.write**(dir, root, alive, blocks::listByPage)
++       Files.createDirectory(unique(dir, root))         -- あればやめずに (2) を付ける
+        BlockRepo.listByPage(id)                         @ src/main/java/app/dearnotes/db/BlockRepo.java:21
++       MarkdownWriter.write(page, blocks)
++       Files.writeString(file, md, CREATE_NEW)          -- 既にあるファイルなら失敗する
++     Alert(INFORMATION) で書いたページの数を出す
+</script>
+    </doc-calls>
+    <doc-note tone="warn"><strong>途中で失敗したとき</strong> 書けたファイルは残す。メッセージに、書けたページの数とエラーを出す。</doc-note>
+  </doc-claim>
+</doc-claim>
+
+<!-- ═════ shared ═════ -->
+<doc-claim aux="shared">
+  <p>Shared: 新しいパッケージ <code>app.dearnotes.export</code>。UI に依存しない。</p>
+  <doc-schema id="api" lang="java" title="app.dearnotes.export · sketch">
+<script type="text/plain">
+public final class MarkdownWriter {
+    /** UTF-8、BOM なし、改行は LF。末尾に改行を1つ。 */
+    public static String write(Page page, List<Block> blocks);
+}
+
+final class Inline {
+    static String write(String text, List<Mark> marks);   // 装飾と \ の付け方
+}
+
+public final class ExportTree {
+    public interface Blocks { List<Block> of(String pageId) throws SQLException; }
+    public static String fileName(Page p);
+    /** 書いたファイルを返す。root の子孫だけを alive からたどる。 */
+    public static List<Path> write(Path dir, Page root, List<Page> alive, Blocks blocks)
+        throws IOException, SQLException;
+}
+</script>
+  </doc-schema>
+</doc-claim>
+
+<doc-claim aux="scope">
+  <p>Not changing: DB、自動保存、貼り付け、Markdown の読み込み。</p>
+  <ul>
+    <li>DB のスキーマと Migrations は変えない。書き出しは読むだけ。</li>
+    <li>AutoSaver は変えない。書き出す前に flushAndWait() を呼ぶだけ。</li>
+    <li>PasteParser は変えない。</li>
+    <li>Markdown ファイルを読み込んでページにする機能は作らない。</li>
+    <li>子ページへのリンクは、親の本文に足さない。</li>
+    <li>決まった時刻に自動で書き出す機能は作らない。</li>
+  </ul>
+</doc-claim>
+
+</doc-plan>
+</main>
+</body>
+</html>
