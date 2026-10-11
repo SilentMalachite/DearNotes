@@ -147,6 +147,27 @@ class PageRepoTest extends DbTestBase {
         assertEquals(1024.0, alive.get(1).sortKey() - alive.get(0).sortKey());
     }
 
+@Test
+    void findByTitlePutsPrefixMatchesFirstAndSkipsTrashAndUntitled() throws Exception {
+        var inn = pages.create(null, "東京の宿");
+        var kyoto = pages.create(null, "京都");
+        var gone = pages.create(null, "京都メモ");
+        pages.create(null, "");
+        pages.trash(gone.id(), 1);
+        assertEquals(List.of(kyoto.id(), inn.id()), pages.findByTitle("京", 8).stream().map(Page::id).toList());
+        assertEquals(2, pages.findByTitle("", 8).size());
+        assertEquals(1, pages.findByTitle("", 1).size());
+        assertEquals(List.of(), pages.findByTitle("100%", 8));
+    }
+
+    @Test
+    void findByTitlePutsExactMatchBeforeTheLimit() throws Exception {
+        var kyoto = pages.create(null, "京都");
+        Thread.sleep(5);
+        pages.create(null, "京都メモ");
+        assertEquals(List.of(kyoto.id()), pages.findByTitle("京都", 1).stream().map(Page::id).toList());
+    }
+
     private List<String> titles() throws Exception {
         return pages.listAlive().stream().map(Page::title).toList();
     }

@@ -1,6 +1,7 @@
 package app.dearnotes.ui;
 
 import app.dearnotes.editor.MarkdownShortcuts;
+import app.dearnotes.editor.Marks;
 import app.dearnotes.editor.SlashCommands;
 import app.dearnotes.model.Block;
 import app.dearnotes.model.BlockType;
@@ -14,6 +15,7 @@ import javafx.scene.control.CheckBox;
 import javafx.scene.control.Label;
 import javafx.scene.control.Separator;
 import javafx.scene.input.Clipboard;
+import javafx.scene.input.DataFormat;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
 import javafx.scene.input.MouseEvent;
@@ -23,6 +25,7 @@ import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.StackPane;
 import org.fxmisc.richtext.StyleClassedTextArea;
+import org.fxmisc.richtext.model.ReadOnlyStyledDocument;
 
 /** ブロック1つ分の行。左からハンドル、記号（点・番号・チェック）、本文。 */
 final class BlockView extends HBox {
@@ -41,11 +44,16 @@ final class BlockView extends HBox {
         void moveBy(BlockView v, int delta);
         void convert(BlockView v, BlockType type, int prefixLength);
         void slashQuery(BlockView v, String query);
+        /** 文字が変わった。「[[語句」を打っていればページの候補を出す。 */
+        void linkQuery(BlockView v);
+        /** フォーカスが外れた。候補の窓を閉じる。 */
+        void blurred(BlockView v);
         boolean slashKey(BlockView v, KeyEvent e);
         void pasteLines(BlockView v, String text);
         void scroll(double deltaY);
         void focused(BlockView v);
         void openLink(String url);
+        void openPage(String pageId);
         void dragStarted(BlockView v, MouseEvent e);
         void toggleFold(BlockView v);
     }
@@ -64,6 +72,8 @@ final class BlockView extends HBox {
     private final Label placeholder = new Label();
     private Block block;
     private boolean loading;
+    /** insertPageLink や装飾ごとの貼り付けの最中。入れたリンクを unlink で外さないため。 */
+    private boolean linking;
     private boolean composing;
     private boolean foldable;
     private boolean hidden;
@@ -118,12 +128,21 @@ final class BlockView extends HBox {
         area.plainTextChanges().subscribe(ch -> {
             // 日本語入力では「＃　」がまとめて確定されることもあるので、短い入力なら調べる
             int n = ch.getInserted().length();
+            // 元に戻すときは、消す前の装飾ごと戻すので触らない。
+            // 記号の変換は行頭を消して位置がずれるので、リンクの印を外してから調べる
+            if (!loading && !linking && n >= 1 && !area.getUndoManager().isPerformingAction()) {
+                Platform.runLater(() -> unlink(ch.getPosition(), n));
+            }
             if (!loading && n >= 1 && n <= 4) Platform.runLater(this::detectShortcut);
+        });
+        // ←→ やクリックでカーソルが「[[」から離れたら、ページの候補を閉じる
+        area.caretPositionProperty().addListener((obs, old, now) -> {
+            if (!loading) host.linkQuery(this);
         });
         area.focusedProperty().addListener((obs, was, now) -> {
             updatePlaceholder();
             if (now) host.focused(this);
-            else host.slashQuery(this, null);
+            else host.blurred(this);
         });
         // 日本語入力で変換中の文字があるあいだは、ショートカットも Enter も IME に任せる
         area.addEventFilter(javafx.scene.input.InputMethodEvent.INPUT_METHOD_TEXT_CHANGED,
@@ -173,6 +192,23 @@ final class BlockView extends HBox {
     void setContent(String text, List<Mark> marks) {
         block = block.withContent(text, marks);
         load();
+    }
+
+    /** from から to を、target のページへのリンクにした name に置き換える。カーソルはリンクの後ろ。 */
+    void insertPageLink(int from, int to, String name, String target) {
+        linking = true;
+        try {
+            area.replaceText(from, to, name);
+            // 太字などは残し、リンクだけ付け替える
+            area.setStyleSpans(from, area.getStyleSpans(from, from + name.length()).mapStyles(classes -> {
+                var next = new java.util.ArrayList<>(StyledText.withoutPage(classes));
+                next.addAll(StyledText.pageClasses(target));
+                return next;
+            }));
+        } finally {
+            linking = false;
+        }
+        focusAt(from + name.length());
     }
 
     void setListNumber(int n) {
@@ -294,12 +330,35 @@ final class BlockView extends HBox {
         host.edited(this);
         // コードの中の「/」はただの文字。候補は出さず、出ていれば閉じる
         host.slashQuery(this, block.type() == BlockType.CODE ? null : SlashCommands.queryOf(text));
+        host.linkQuery(this);
+    }
+
+    /**
+     * リンクの外に打った文字から、ページへのリンクの印を外す。
+     * RichTextFX は前の文字（行頭では後ろの文字）の装飾を引き継ぐので、そのままだと打った文字もリンクになる。
+     * 前と後ろの文字が同じリンクなら、リンクの途中の入力なので残す。
+     */
+    private void unlink(int at, int length) {
+        int end = at + length;
+        if (end > area.getLength()) return;
+        String target = StyledText.targetOf(area.getStyleOfChar(at));
+        if (target == null) return;
+        String text = area.getText();
+        boolean before = at > 0 && text.charAt(at - 1) != '\n'
+            && target.equals(StyledText.targetOf(area.getStyleOfChar(at - 1)));
+        boolean after = end < text.length() && text.charAt(end) != '\n'
+            && target.equals(StyledText.targetOf(area.getStyleOfChar(end)));
+        if (before && after) return;
+        area.setStyleSpans(at, area.getStyleSpans(at, end).mapStyles(StyledText::withoutPage));
     }
 
     /** 行頭に「# 」などを打ったら、その種類に変える。 */
     private void detectShortcut() {
         if (block.type() != BlockType.PARAGRAPH || composing) return;
         MarkdownShortcuts.detect(area.getText(), area.getCaretPosition())
+            // 「---」「#」などの名前のページへのリンクは記号ではない。変えるとリンクが消える
+            .filter(hit -> StyledText.read(area).stream()
+                .noneMatch(m -> m.style() == Mark.Style.PAGE && m.start() < hit.prefixLength()))
             .ifPresent(hit -> host.convert(this, hit.type(), hit.prefixLength()));
     }
 
@@ -342,6 +401,15 @@ final class BlockView extends HBox {
                 String clip = Clipboard.getSystemClipboard().getString();
                 if (clip != null && clip.contains("\n") && block.type() != BlockType.CODE) {
                     host.pasteLines(this, clip);
+                    e.consume();
+                } else if (styledClipboard()) {
+                    // コピーした装飾ごと貼るときは、ページへのリンクも貼ったまま残す
+                    linking = true;
+                    try {
+                        area.paste();
+                    } finally {
+                        linking = false;
+                    }
                     e.consume();
                 }
                 return;
@@ -410,6 +478,15 @@ final class BlockView extends HBox {
         }
     }
 
+    /** クリップボードに、RichTextFX がコピーした装飾つきの文字があるか（ほかのアプリの文字は装飾なし）。 */
+    private boolean styledClipboard() {
+        return area.getStyleCodecs().map(codecs -> {
+            String name = ReadOnlyStyledDocument.codec(codecs._1, codecs._2, area.getSegOps()).getName();
+            DataFormat format = DataFormat.lookupMimeType(name);
+            return format != null && Clipboard.getSystemClipboard().hasContent(format);
+        }).orElse(false);
+    }
+
     private boolean onFirstLine() {
         if (area.getCurrentParagraph() != 0) return false;
         return area.lineIndex(0, area.getCaretColumn()) == 0;
@@ -421,16 +498,16 @@ final class BlockView extends HBox {
         return area.lineIndex(last, area.getCaretColumn()) == area.getParagraphLinesCount(last) - 1;
     }
 
-    /** Cmd/Ctrl を押しながらリンクを押すと開く。 */
+    /** Cmd/Ctrl を押しながらリンクを押すと開く。ページへのリンクなら、そのページへ移る。 */
     private void onClicked(MouseEvent e) {
         if (!e.isShortcutDown()) return;
-        int at = area.hit(e.getX(), e.getY()).getInsertionIndex();
-        for (Mark m : block.marks()) {
-            if (m.style() == Mark.Style.LINK && m.start() <= at && at <= m.end()) {
-                host.openLink(block.text().substring(m.start(), m.end()).strip());
-                e.consume();
-                return;
-            }
-        }
+        // 文字と文字の間ではなく、押した文字そのものを見る（行の文字より右を押したときは何もしない）
+        var at = area.hit(e.getX(), e.getY()).getCharacterIndex();
+        if (at.isEmpty()) return;
+        Marks.linkAt(block.marks(), at.getAsInt()).ifPresent(m -> {
+            if (m.style() == Mark.Style.PAGE) host.openPage(m.target());
+            else host.openLink(block.text().substring(m.start(), m.end()).strip());
+            e.consume();
+        });
     }
 }

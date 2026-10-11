@@ -199,6 +199,7 @@
     -rtfx-background-color: #f1f0ec;
 }
 .styled-text-area .m-link { -fx-fill: -dn-accent; -fx-underline: true; }
+.styled-text-area .m-page { -fx-fill: -dn-accent; -fx-underline: true; }
 
 /* ---- 目次 ---- */
 
@@ -251,6 +252,19 @@
 .slash-menu .list-cell:selected { -fx-background-color: -dn-hover; }
 .slash-menu .list-cell:selected .label { -fx-text-fill: -dn-ink; }
 .slash-shortcut { -fx-text-fill: -dn-muted; -fx-font-family: "Menlo", "Consolas", "Monospaced"; -fx-font-size: 12px; }
+
+/* ---- このページへのリンク ---- */
+
+.backlinks {
+    -fx-border-color: -dn-line transparent transparent transparent;
+    -fx-padding: 10 0 0 0;
+    -fx-spacing: 2;
+}
+.backlinks-header { -fx-text-fill: -dn-muted; -fx-font-size: 12px; -fx-padding: 0 0 4 6; }
+.backlink { -fx-padding: 4 6; -fx-background-radius: 4; -fx-cursor: hand; }
+.backlink:hover { -fx-background-color: -dn-hover; }
+.backlink-title { -fx-text-fill: -dn-ink; }
+.backlink-snippet { -fx-text-fill: -dn-muted; }
 
 /* ---- 検索 ---- */
 

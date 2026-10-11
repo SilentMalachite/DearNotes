@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 import app.dearnotes.model.Block;
 import app.dearnotes.model.BlockType;
+import app.dearnotes.model.Mark;
 import app.dearnotes.model.Page;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -167,6 +168,31 @@ class ExportTreeTest {
 
         assertEquals(List.of(dir.resolve("旅行").resolve("旅行.md")), e.written());
         assertEquals("読めない", e.getCause().getMessage());
+    }
+
+    @Test
+    void linksBetweenExportedPagesBecomeRelativePaths() throws Exception {
+        Page trip = page("t", null, "旅行", 0);
+        Page kyoto = page("k", "t", "京都", 1);
+        Page osaka = page("o", "t", "大阪", 2);
+        Page day1 = page("d", "o", "1日目", 0);
+        Page books = page("b", null, "読書メモ", 3);
+        Map<String, List<Block>> bodies = Map.of(
+            "t", List.of(linkTo("京都", "k")),
+            "d", List.of(linkTo("京都", "k"), linkTo("読書メモ", "b")));
+
+        ExportTree.write(dir, trip, List.of(trip, kyoto, osaka, day1, books),
+            id -> bodies.getOrDefault(id, List.of()));
+
+        Path top = dir.resolve("旅行");
+        assertEquals("# 旅行\n\n[京都](京都.md)\n", Files.readString(top.resolve("旅行.md")));
+        assertEquals("# 1日目\n\n[京都](../京都.md)\n\n読書メモ\n",
+            Files.readString(top.resolve("大阪").resolve("1日目.md")));
+    }
+
+    private static Block linkTo(String text, String target) {
+        return new Block("b" + target + text, "x", BlockType.PARAGRAPH, text,
+            List.of(new Mark(0, text.length(), Mark.Style.PAGE, target)), false, 0, 0);
     }
 
     private static List<String> list(Path folder) throws IOException {

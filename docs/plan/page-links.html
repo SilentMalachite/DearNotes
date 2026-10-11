@@ -1,0 +1,388 @@
+<!doctype html>
+<html lang="ja">
+<meta charset="utf-8">
+<title>Page Links</title>
+<link rel="stylesheet" href="htmlplan.css">
+<script src="htmlplan.js" defer></script>
+<style data-mock-shared>
+  .ui { font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic UI", "Segoe UI", sans-serif; color: #37352f; background: #fff; border: 1px solid #e3e2de; border-radius: 10px; overflow: hidden; position: relative; }
+  .ui .page { padding: 12px 16px; }
+  .ui .page h2 { font-size: 18px; margin: 0 0 6px; }
+  .ui .crumb { font-size: 12px; color: #9b9a97; padding: 8px 16px 0; }
+  .ui .ln { padding: 2px 0; }
+  .ui .caret { display: inline-block; width: 1px; height: 15px; background: #37352f; vertical-align: -2px; }
+  .ui .pl { color: #2383e2; text-decoration: underline; text-decoration-style: dotted; text-underline-offset: 3px; }
+  .ui .menu { position: absolute; left: 70px; top: 96px; width: 260px; background: #fff; border: 1px solid #d9d8d4; border-radius: 6px; box-shadow: 0 4px 14px rgba(0,0,0,.12); padding: 4px 0; font-size: 13px; }
+  .ui .menu .it { padding: 4px 12px; display: flex; gap: 8px; }
+  .ui .menu .it.sel { background: #e8f2fc; }
+  .ui .menu .path { margin-left: auto; color: #9b9a97; font-size: 11.5px; }
+  .ui .menu hr { border: 0; border-top: 1px solid #efeeea; margin: 4px 0; }
+  .ui .back { border-top: 1px solid #efeeea; margin-top: 12px; padding-top: 8px; }
+  .ui .back .hd { font-size: 12px; color: #9b9a97; margin-bottom: 4px; }
+  .ui .back .row { padding: 4px 6px; border-radius: 4px; font-size: 13px; }
+  .ui .back .row:hover { background: #f1f1ef; }
+  .ui .back .snip { color: #787774; margin-left: 6px; }
+  .ui .alert { width: 300px; margin: 18px auto; border: 1px solid #d9d8d4; border-radius: 8px; box-shadow: 0 6px 18px rgba(0,0,0,.14); padding: 14px 16px; font-size: 13px; background: #fff; }
+  .ui .alert b { display: block; margin-bottom: 4px; font-size: 14px; }
+  .ui .alert .ft { text-align: right; margin-top: 12px; }
+  .ui .btn { display: inline-block; padding: 3px 12px; border: 1px solid #d9d8d4; border-radius: 5px; font-size: 12.5px; }
+  .ui .btn.pri { background: #2383e2; color: #fff; border-color: #2383e2; }
+  .ui .dim { color: #b5b4b0; }
+</style>
+<body>
+
+<header>
+  <h1>DearNotes のページ間リンク</h1>
+  <doc-changes new="4" changed="21"></doc-changes>
+  <details class="thread"><summary>Why · 2 requests</summary>
+    <doc-quote via="prompt" from="the user">フォルダ内リンクや他文書内リンクには対応してますか？</doc-quote>
+    <doc-quote via="prompt" from="the user">ベージ間リンクを設計してください</doc-quote>
+  </details>
+</header>
+
+<main>
+<doc-plan>
+
+<!-- ═════ 1 ═════ -->
+<doc-claim>
+  <p>ユーザーは <code>[[</code> を打って、ほかのページへのリンクを入れられる。</p>
+  <doc-mock frame="none" w="440"><template>
+<div class="ui"><div class="page">
+  <h2>旅行</h2>
+  <div class="ln">朝は伏見稲荷へ行く。</div>
+  <div class="ln" data-ref="typed">次は [[京<span class="caret"></span></div>
+  <div class="ln dim">　</div>
+  <div class="ln dim">　</div>
+  <div class="ln dim">　</div>
+  <div class="ln dim">　</div>
+  <div class="menu">
+    <div class="it sel" data-ref="hit"><span>📝</span><span>京都</span><span class="path">旅行</span></div>
+    <div class="it"><span>📝</span><span>京都の宿</span><span class="path">旅行 / 京都</span></div>
+    <hr>
+    <div class="it" data-ref="new"><span>＋</span><span>新しいページ「京」を作る</span></div>
+  </div>
+</div></div></template>
+    <doc-pin ref="typed" anchor="r" title="「「京 でも同じ候補が出る">日本語入力のままでも使える。</doc-pin>
+    <doc-pin ref="hit" anchor="r" title="Enter か Tab で入れる">↑↓ で選び、Esc で閉じる。</doc-pin>
+    <doc-pin ref="new" anchor="br" title="下の質問で決める"></doc-pin>
+  </doc-mock>
+  <doc-ask id="create">
+    <p>候補にない名前のとき、新しいページを作れるようにしますか？</p>
+    <label><input type="radio" name="create" value="child" checked> 作る <small>今のページの子ページにして、リンクを入れる</small></label>
+    <label><input type="radio" name="create" value="no"> 作らない <small>候補の最後の行は出ない</small></label>
+  </doc-ask>
+
+  <doc-claim>
+    <p><code>[[</code> か <code>「「</code> の後ろの文字で、ページ名を絞り込む。</p>
+    <doc-code title="PageLinks.java · sketch" lang="java">
+<script type="text/plain">
+/** 「[[」の後ろで打っているページ名。from は「[[」の位置。 */
+public record Query(int from, String text) {}
+
+// 日本語入力では [[ が「「 や ［［ になる
+private static final Pattern OPEN =
+    Pattern.compile("(?:\\[\\[|「「|［［)([^\\[\\]「」［］\\n]{0,40})$");
+
+/** caret の前が「[[語句」なら、その位置と語句。そうでなければ空。 */
+public static Optional<Query> queryAt(String text, int caret) {
+    Matcher m = OPEN.matcher(text.substring(0, caret));
+    return m.find() ? Optional.of(new Query(m.start(), m.group(1))) : Optional.empty();
+}
+</script>
+      <doc-pin line="6" title="閉じ括弧か改行があれば候補を閉じる"></doc-pin>
+      <doc-pin line="9" tone="info" title="コードのブロックでは呼ばない">「/」の候補と同じ扱い。</doc-pin>
+    </doc-code>
+  </doc-claim>
+
+  <doc-claim>
+    <p>候補を選ぶと、<code>[[語句</code> がページ名に替わり、PAGE の印が付く。</p>
+    <doc-calls title="リンクを入れる" caption="候補の窓は SlashMenu と同じく、フォーカスをエリアに残す。">
+<script type="text/plain">
+~ BlockView.onEdited()                              @ src/main/java/app/dearnotes/ui/BlockView.java:289
++   PageEditor.**linkQuery**(v, text, caret)        @ src/main/java/app/dearnotes/ui/PageEditor.java:407
++     PageLinks.**queryAt**(text, caret)
++     SearchRepo.**pageTitles**(query, 8)           @ src/main/java/app/dearnotes/db/SearchRepo.java:45   -- 空なら最近のページ
++     **PageLinkMenu**.update(v, pages)
+
+  PageLinkMenu.pick()
++   PageEditor.**insertPageLink**(v, from, page)    @ src/main/java/app/dearnotes/ui/PageEditor.java:515
+?     MainWindow.**newLinkedPage**(parentId, name)  @ src/main/java/app/dearnotes/ui/MainWindow.java:232   -- 新しいページを作るときだけ
+?       PageRepo.create(parentId, name)             @ src/main/java/app/dearnotes/db/PageRepo.java:31
+</script>
+    </doc-calls>
+    <doc-ask id="rename">
+      <p>リンク先の名前を変えたとき、リンクの文字はどうしますか？</p>
+      <label><input type="radio" name="rename" value="keep" checked> そのまま <small>リンク先は id で探すので、移る先は変わらない</small></label>
+      <label><input type="radio" name="rename" value="follow"> 新しい名前に書き換える <small>前の名前と同じ文字のリンクだけ。DB を書く</small></label>
+    </doc-ask>
+    <div data-if="rename=follow"><doc-note tone="warn"><strong>開いているページ</strong> 書き換えるページを開いているときは、PageEditor の行も読み直す。AutoSaver の書きかけと競合しないよう、先に保存する。</doc-note></div>
+
+    <doc-claim at="src/main/java/app/dearnotes/ui/PageEditor.java:515">
+      <p><b>PageEditor.java:515</b> · insertPageLink()</p>
+      <doc-code title="PageEditor.java · sketch" lang="java" start="516">
+<script type="text/plain">
+/** 「[[語句」を消して、ページ名を PAGE の印付きで入れる。 */
+private void insertPageLink(BlockView v, int from, Page target) {
+    String name = target.displayTitle().replace('\n', ' ');
+    var area = v.area();
+    area.replaceText(from, v.caret(), name);
+    area.setStyle(from, from + name.length(), StyledText.pageClasses(target.id()));
+    v.focusAt(from + name.length());
+}
+</script>
+        <doc-pin line="521" title="エリアの変更として保存される">onEdited() が marks を読み、AutoSaver に渡す。</doc-pin>
+        <doc-pin line="521" tone="warn" title="範囲の太字などは外れる"></doc-pin>
+      </doc-code>
+    </doc-claim>
+  </doc-claim>
+
+  <doc-claim>
+    <p>リンクの末尾で続けて打った文字は、リンクに入らない。</p>
+    <doc-code title="BlockView.java · sketch" lang="java" start="118">
+<script type="text/plain">
+area.plainTextChanges().subscribe(ch -> {
+    int n = ch.getInserted().length();
+    if (!loading && n >= 1 && n <= 4) Platform.runLater(this::detectShortcut);
+    if (!loading && n >= 1) Platform.runLater(() -> unlinkTail(ch.getPosition(), n));
+});
+
+/** リンクの末尾に打った文字から、PAGE の印を外す。リンクの途中に打った文字はそのまま。 */
+private void unlinkTail(int at, int length) {
+    int end = at + length;
+    if (end > area.getLength() || !StyledText.isPage(area.getStyleOfChar(at))) return;
+    if (end < area.getLength() && StyledText.isPage(area.getStyleOfChar(end))) return;
+    area.setStyleSpans(at, area.getStyleSpans(at, end).mapStyles(StyledText::withoutPage));
+}
+</script>
+      <doc-pin line="121" title="RichTextFX は前の文字の装飾を引き継ぐ">そのままだと、打った文字もリンクになる。</doc-pin>
+      <doc-pin line="128" title="後ろの文字もリンクなら、途中の入力">リンクの文字を直すときは、印を残す。</doc-pin>
+    </doc-code>
+  </doc-claim>
+</doc-claim>
+
+<!-- ═════ 2 ═════ -->
+<doc-claim>
+  <p>Cmd/Ctrl を押しながらリンクを押すと、そのページへ移る。</p>
+  <doc-machine name="target" caption="リンク先のページの状態で、押したときの動きが変わる。">
+<script type="text/plain">
+machine target initial alive
+state alive         # リンク先のページを開く。
+state trashed       # ゴミ箱にあると知らせる。
+state gone   final  # ページがないと知らせる。
+
+| alive | trashed | gone |
+
+alive   -trash->   trashed : ゴミ箱へ
+trashed -restore-> alive   : 元に戻す
+trashed -purge->   gone    : 完全に削除
+</script>
+    <div data-state="alive"><doc-mock frame="none" w="440"><template>
+<div class="ui">
+  <div class="crumb" data-ref="crumb">🧳 旅行  /  📝 京都</div>
+  <div class="page">
+    <h2>京都</h2>
+    <div class="ln">1日目は東山を歩く。</div>
+    <div class="ln dim">　</div>
+  </div>
+</div></template>
+      <doc-pin ref="crumb" anchor="r" title="サイドバーの選択も移る">MainWindow.open() を使う。</doc-pin>
+    </doc-mock></div>
+    <div data-state="trashed"><doc-mock frame="none" w="440"><template>
+<div class="ui"><div class="alert">
+  <b>「京都」はゴミ箱にあります</b>
+  ゴミ箱から元に戻すと、このリンクから開けます。
+  <div class="ft"><span class="btn pri">OK</span></div>
+</div></div></template></doc-mock></div>
+    <div data-state="gone"><doc-mock frame="none" w="440"><template>
+<div class="ui"><div class="alert">
+  <b>リンク先のページがありません</b>
+  ページは完全に削除されました。
+  <div class="ft"><span class="btn pri">OK</span></div>
+</div></div></template></doc-mock></div>
+  </doc-machine>
+
+  <doc-claim>
+    <p>BlockView は PAGE の印を押すと、ページの id を MainWindow に渡す。</p>
+    <doc-calls title="リンク先へ移る" caption="検索の結果を開くときと同じ道を通る。">
+<script type="text/plain">
+~ BlockView.onClicked(e)                  @ src/main/java/app/dearnotes/ui/BlockView.java:425
++   PageEditor.**openPage**(id)           @ src/main/java/app/dearnotes/ui/PageEditor.java:482
++     MainWindow.**openPageById**(id)     @ src/main/java/app/dearnotes/ui/MainWindow.java:333
+        PageRepo.get(id)                  @ src/main/java/app/dearnotes/db/PageRepo.java:78
+        MainWindow.open(p, null)          @ src/main/java/app/dearnotes/ui/MainWindow.java:203   -- 書きかけを保存してから移る
++       Errors.warn(…)                    -- ゴミ箱にあるか、ないとき
+</script>
+    </doc-calls>
+    <doc-claim at="src/main/java/app/dearnotes/ui/BlockView.java:425">
+      <p><b>BlockView.java:425</b> · onClicked()</p>
+      <doc-code diff file="src/main/java/app/dearnotes/ui/BlockView.java" lang="java">
+<script type="text/plain">
+@@ -425,12 +425,17 @@
+-    /** Cmd/Ctrl を押しながらリンクを押すと開く。 */
++    /** Cmd/Ctrl を押しながらリンクを押すと開く。ページへのリンクなら、そのページへ移る。 */
+     private void onClicked(MouseEvent e) {
+         if (!e.isShortcutDown()) return;
+         int at = area.hit(e.getX(), e.getY()).getInsertionIndex();
+         for (Mark m : block.marks()) {
++            if (m.style() == Mark.Style.PAGE && m.start() <= at && at <= m.end()) {
++                host.openPage(m.target());
++                e.consume();
++                return;
++            }
+             if (m.style() == Mark.Style.LINK && m.start() <= at && at <= m.end()) {
+                 host.openLink(block.text().substring(m.start(), m.end()).strip());
+                 e.consume();
+                 return;
+             }
+         }
+     }
+</script>
+        <doc-pin line="431" title="Host に openPage(String) を足す">PageEditor が MainWindow に渡す。</doc-pin>
+      </doc-code>
+    </doc-claim>
+  </doc-claim>
+</doc-claim>
+
+<!-- ═════ 3 ═════ -->
+<doc-claim>
+  <p>ページの下に、このページへリンクしているページが並ぶ。</p>
+  <doc-mock frame="none" w="440"><template>
+<div class="ui"><div class="page">
+  <h2>京都</h2>
+  <div class="ln">1日目は東山を歩く。</div>
+  <div class="back" data-ref="back">
+    <div class="hd">このページへのリンク · 2</div>
+    <div class="row" data-ref="row">🧳 旅行<span class="snip">次は <span class="pl">京都</span> に行く</span></div>
+    <div class="row">📅 2026-10-11<span class="snip"><span class="pl">京都</span> の宿を予約した</span></div>
+  </div>
+</div></div></template>
+    <doc-pin ref="back" anchor="tr" title="リンクがなければ出さない"></doc-pin>
+    <doc-pin ref="row" anchor="r" title="押すとその行へ移る">MainWindow.open(p, blockId) を使う。</doc-pin>
+  </doc-mock>
+  <doc-ask id="backlinks">
+    <p>このページへのリンクの一覧を作りますか？</p>
+    <label><input type="radio" name="backlinks" value="yes" checked> 作る <small>ページを開くたびに読み直す</small></label>
+    <label><input type="radio" name="backlinks" value="no"> 作らない <small>claim 3 は無くなる</small></label>
+  </doc-ask>
+
+  <doc-claim>
+    <p><code>BlockRepo.linksTo()</code> は marks の JSON を LIKE で探す。表は足さない。</p>
+    <doc-code title="BlockRepo.java · sketch" lang="java" start="40">
+<script type="text/plain">
+/** target へのリンクを持つブロック。ゴミ箱のページと target 自身は入れない。 */
+public List<Backlink> linksTo(String target) throws SQLException {
+    return db.read(c -> {
+        try (var ps = c.prepareStatement("""
+                SELECT p.id, p.title, p.icon, p.daily_date, b.id, b.text
+                FROM blocks b JOIN pages p ON p.id = b.page_id
+                WHERE b.marks LIKE ? AND p.deleted_at IS NULL AND p.id <> ?
+                ORDER BY p.updated_at DESC, b.sort_key LIMIT 50""")) {
+            ps.setString(1, "%\"page\",\"" + target + "\"]%");
+            ps.setString(2, target);
+            try (var rs = ps.executeQuery()) { … }
+        }
+    });
+}
+</script>
+      <doc-pin line="46" tone="warn" title="全部のブロックを読む">数万行までは問題ない。遅ければ表を足す。</doc-pin>
+      <doc-pin line="48" title="id は UUID なので % と _ を含まない"></doc-pin>
+    </doc-code>
+  </doc-claim>
+</doc-claim>
+
+<!-- ═════ 4 ═════ -->
+<doc-claim>
+  <p>子ページごと書き出すと、ページ間リンクは相対パスのリンクになる。</p>
+  <doc-mock frame="terminal" title="書き出したフォルダ" w="460"><template><span class="dim">$</span> cat 旅行/大阪/1日目.md
+# 1日目
+
+帰りは <b>[京都](../京都.md)</b> に寄る。
+本は 読書メモ を見る。   <span class="dim"># 書き出していないページは文字だけ</span>
+<span class="dim">$</span> cat 旅行/旅行.md
+# 旅行
+
+次は <b>[京都](京都.md)</b> に行く。
+</template></doc-mock>
+  <doc-ask id="format">
+    <p>書き出したファイルで、ページ間リンクをどう書きますか？</p>
+    <label><input type="radio" name="format" value="md" checked> <code>[京都](../京都.md)</code> <small>GitHub や VS Code で開ける</small></label>
+    <label><input type="radio" name="format" value="wiki"> <code>[[京都]]</code> <small>Obsidian が読む。同じ名前のページで迷う</small></label>
+  </doc-ask>
+
+  <doc-claim>
+    <p><code>ExportTree</code> は先に全ページのパスを決めて、それから書く。</p>
+    <doc-calls title="子ページごと書き出す" caption="今は名前を決めながら書くので、2回に分ける。">
+<script type="text/plain">
+~ ExportTree.write(dir, root, alive, blocks)        @ src/main/java/app/dearnotes/export/ExportTree.java:78
++   **plan**(top, root, children)                   -- id から Path への表
+~   writeChildren(folder, parent, …, paths)         @ src/main/java/app/dearnotes/export/ExportTree.java:100
+~     writePage(file, p, blocks, links)             @ src/main/java/app/dearnotes/export/ExportTree.java:114
+~       MarkdownWriter.write(page, blocks, links)   @ src/main/java/app/dearnotes/export/MarkdownWriter.java:22
+~         Inline.write(text, marks, links)          @ src/main/java/app/dearnotes/export/Inline.java:45
+</script>
+    </doc-calls>
+  </doc-claim>
+
+  <doc-claim>
+    <p><code>Inline</code> は PAGE の印を、パスがあればリンクに、なければ文字にする。</p>
+    <doc-code title="Inline.java · sketch" lang="java" start="76">
+<script type="text/plain">
+if (seg.styles().contains(Style.CODE)) {
+    out.add(new Text(code(part)));
+} else if (seg.target() != null) {
+    // ページへのリンク。書き出した木の外なら、ふだんの文字にする
+    String href = links.href(seg.target());
+    out.add(new Text(href == null ? escape(part)
+        : "[" + escape(part) + "](" + destination(href) + ")"));
+} else if (seg.styles().contains(Style.LINK)) {
+    …
+}
+</script>
+      <doc-pin line="80" title="1ページだけの書き出しは Links.NONE">いつも文字だけになる。</doc-pin>
+      <doc-pin line="82" title="空白や括弧があれば &lt;…&gt; で囲む">「京都 (2).md」も開ける。</doc-pin>
+    </doc-code>
+  </doc-claim>
+</doc-claim>
+
+<!-- ═════ shared ═════ -->
+<doc-claim aux="shared">
+  <p>Shared: Mark にリンク先の id を足す。marks の JSON は4つ目に id を持つ。</p>
+  <doc-schema id="mark" lang="java" diff title="Mark.java">
+<script type="text/plain">
+-/** 行内の装飾。start は含み、end は含まない。 */
+-public record Mark(int start, int end, Style style) {
++/** 行内の装飾。start は含み、end は含まない。target は PAGE のときだけ、リンク先のページの id。 */
++public record Mark(int start, int end, Style style, String target) {
+
+     public enum Style {
+-        BOLD, ITALIC, STRIKE, CODE, LINK;
++        BOLD, ITALIC, STRIKE, CODE, LINK, PAGE;
+     }
+
++    public Mark(int start, int end, Style style) {
++        this(start, end, style, null);
++    }
++
++    // JSON: [[4,6,"page","0192f3c1-…"]]。MarksCodec は4つ目を読み書きする
++    // 古い版は要素が3つでない装飾を捨てる（MarksCodec.java:36）。文字は残る
++    // StyledText は CSS クラス "m-page" と "to-<id>" の2つで持つ
++    // Marks.normalize() は、target が同じときだけ PAGE をまとめる
+ }
+</script>
+  </doc-schema>
+</doc-claim>
+
+<doc-claim aux="scope">
+  <p>Not changing: DB の表、URL のリンク、検索、貼り付け。</p>
+  <ul>
+    <li>DB の表とマイグレーションは変えない。リンクは今の <code>marks</code> 列に入る。</li>
+    <li>URL のリンク（Cmd/Ctrl+Shift+L）は今のまま。</li>
+    <li>検索はリンクの文字を、ふだんの文字として見つける。</li>
+    <li>貼り付けた <code>[[京都]]</code> や <code>[a](b.md)</code> は、リンクにしない。</li>
+    <li>パソコンのファイルやフォルダへのリンクは作らない。</li>
+  </ul>
+</doc-claim>
+
+</doc-plan>
+</main>
+</body></html>

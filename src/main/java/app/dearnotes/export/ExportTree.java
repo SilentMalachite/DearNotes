@@ -15,6 +15,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -24,6 +25,7 @@ import java.util.regex.Pattern;
 /**
  * ページと子ページを、フォルダの中に1ページ1ファイルで書く。
  * いつも新しいフォルダを作り、既にあるファイルは上書きしない。
+ * 書き出すページどうしのリンクは、相対パスのリンクにする。
  */
 public final class ExportTree {
 
@@ -74,46 +76,65 @@ public final class ExportTree {
     /**
      * dir の中に root の名前のフォルダを作り、root と子孫を書く。
      * alive はゴミ箱にないページ全部。書いたファイルを、書いた順に返す。
+     * 書き出すページどうしのリンクは、相対パスのリンクにする。
      */
     public static List<Path> write(Path dir, Page root, List<Page> alive, Blocks blocks) throws ExportException {
         Map<String, List<Page>> children = new HashMap<>();
+        Map<String, Page> byId = new HashMap<>();
         for (Page p : alive) {
+            byId.put(p.id(), p);
             if (p.parentId() != null) children.computeIfAbsent(p.parentId(), k -> new ArrayList<>()).add(p);
         }
+        byId.put(root.id(), root);
         children.values().forEach(l -> l.sort(Comparator.comparingDouble(Page::sortKey)));
 
         var written = new ArrayList<Path>();
         try {
             Path top = dir.resolve(unique(existing(dir), fileName(root)));
-            Files.createDirectory(top);
+            // 先に全ページのファイルの場所を決める。リンクを相対パスで書くため
+            Map<String, Path> files = new LinkedHashMap<>();
             var used = new HashSet<String>();
-            String rootName = unique(used, fileName(root));
-            writePage(top.resolve(rootName + ".md"), root, blocks, written);
-            writeChildren(top, root, children, used, blocks, written, new HashSet<>(Set.of(root.id())));
+            files.put(root.id(), top.resolve(unique(used, fileName(root)) + ".md"));
+            plan(top, root, children, used, files, new HashSet<>(Set.of(root.id())));
+
+            Files.createDirectory(top);
+            for (var e : files.entrySet()) {
+                Path file = e.getValue();
+                if (!Files.isDirectory(file.getParent())) Files.createDirectory(file.getParent());
+                writePage(file, byId.get(e.getKey()), blocks, links(file, files), written);
+            }
         } catch (IOException | SQLException e) {
             throw new ExportException(written, e);
         }
         return written;
     }
 
-    /** 子ページを folder に書く。孫があれば、子と同じ名前のフォルダを作って入れる。 */
-    private static void writeChildren(Path folder, Page parent, Map<String, List<Page>> children,
-                                      Set<String> used, Blocks blocks, List<Path> written, Set<String> seen)
-            throws IOException, SQLException {
+    /** 子ページのファイルの場所を、書く順に files に入れる。孫があれば、子と同じ名前のフォルダに入れる。 */
+    private static void plan(Path folder, Page parent, Map<String, List<Page>> children, Set<String> used,
+                             Map<String, Path> files, Set<String> seen) {
         for (Page p : children.getOrDefault(parent.id(), List.of())) {
             if (!seen.add(p.id())) continue;   // 親子が輪になっていても止まる
             String name = unique(used, fileName(p));
-            writePage(folder.resolve(name + ".md"), p, blocks, written);
-            if (children.containsKey(p.id())) {
-                Path sub = Files.createDirectory(folder.resolve(name));
-                writeChildren(sub, p, children, new HashSet<>(), blocks, written, seen);
-            }
+            files.put(p.id(), folder.resolve(name + ".md"));
+            if (children.containsKey(p.id())) plan(folder.resolve(name), p, children, new HashSet<>(), files, seen);
         }
     }
 
-    private static void writePage(Path file, Page p, Blocks blocks, List<Path> written)
+    /** from のファイルから、書き出すほかのページのファイルへの相対パス。 */
+    private static Links links(Path from, Map<String, Path> files) {
+        Path folder = from.getParent();
+        return id -> {
+            Path to = files.get(id);
+            if (to == null) return null;
+            var parts = new ArrayList<String>();
+            for (Path part : folder.relativize(to)) parts.add(part.toString());
+            return String.join("/", parts);
+        };
+    }
+
+    private static void writePage(Path file, Page p, Blocks blocks, Links links, List<Path> written)
             throws IOException, SQLException {
-        String md = MarkdownWriter.write(p, blocks.of(p.id()));
+        String md = MarkdownWriter.write(p, blocks.of(p.id()), links);
         Files.writeString(file, md, StandardCharsets.UTF_8, StandardOpenOption.CREATE_NEW);
         written.add(file);
     }

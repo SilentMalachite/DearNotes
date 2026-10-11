@@ -85,6 +85,20 @@ public final class PageRepo {
             "SELECT " + COLUMNS + " FROM pages WHERE deleted_at IS NULL ORDER BY sort_key, created_at"));
     }
 
+    /**
+     * 「[[」の候補。名前に query を含む、ゴミ箱にない名前付きのページ。
+     * 名前がそのまま一致するもの、名前の頭で一致するもの、最近変えたものから。query が空なら最近変えたものから。
+     * 一致するページが件数の外に落ちると、選べずに同じ名前のページを作ってしまうので、件数で切る前に先頭へ並べる。
+     */
+    public List<Page> findByTitle(String query, int limit) throws SQLException {
+        String q = query == null ? "" : query.strip();
+        return db.read(c -> query(c, "SELECT " + COLUMNS + " " + """
+             FROM pages
+             WHERE deleted_at IS NULL AND title <> '' AND title LIKE ? ESCAPE '\\'
+             ORDER BY title = ? DESC, instr(title, ?) = 1 DESC, updated_at DESC
+             LIMIT """ + " " + Math.max(0, limit), "%" + SearchRepo.escapeLike(q) + "%", q, q));
+    }
+
     /** ゴミ箱の中で、親がゴミ箱にないもの（まとめて消された木の根）。新しい順。 */
     public List<Page> listTrash() throws SQLException {
         return db.read(c -> query(c, "SELECT " + COLUMNS + " " + """

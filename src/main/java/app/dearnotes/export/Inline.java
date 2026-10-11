@@ -11,6 +11,7 @@ import java.util.EnumSet;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.regex.Pattern;
@@ -43,7 +44,13 @@ final class Inline {
     private record Delim(Style style, boolean open) implements Token {}
 
     static String write(String text, List<Mark> marks) {
-        List<Token> tokens = tokens(text, segments(text, clean(text, marks)));
+        return write(text, marks, Links.NONE);
+    }
+
+    /** links はページへのリンクの行き先。行き先のないページへのリンクは、ふだんの文字にする。 */
+    static String write(String text, List<Mark> marks, Links links) {
+        List<Mark> cleaned = clean(text, marks);
+        List<Token> tokens = tokens(text, segments(text, cleaned), cleaned, links);
         // 記号で書いて CommonMark が同じ範囲に読めないときは、HTML のタグで書く
         boolean tags = !markersParse(tokens);
         var out = new StringBuilder();
@@ -56,7 +63,7 @@ final class Inline {
         return out.toString();
     }
 
-    private static List<Token> tokens(String text, List<Segment> segments) {
+    private static List<Token> tokens(String text, List<Segment> segments, List<Mark> marks, Links links) {
         var out = new ArrayList<Token>();
         Deque<Style> open = new ArrayDeque<>();
         for (int i = 0; i < segments.size(); i++) {
@@ -65,7 +72,7 @@ final class Inline {
             while (!seg.styles().containsAll(open)) out.add(new Delim(open.pop(), false));
             int at = i;
             seg.styles().stream()
-                .filter(s -> !open.contains(s) && s != Style.CODE && s != Style.LINK)
+                .filter(s -> !open.contains(s) && !atom(s))
                 .sorted(Comparator.comparingInt((Style s) -> runEnd(segments, at, s)).reversed()
                     .thenComparing(Comparator.naturalOrder()))
                 .forEach(s -> {
@@ -75,8 +82,10 @@ final class Inline {
             String part = text.substring(seg.start(), seg.end());
             if (seg.styles().contains(Style.CODE)) {
                 out.add(new Text(code(part)));
-            } else if (seg.styles().contains(Style.LINK)) {
-                String link = link(part);
+            } else if (seg.styles().contains(Style.LINK) || seg.styles().contains(Style.PAGE)) {
+                String link = seg.styles().contains(Style.PAGE)
+                    ? pageLink(part, links.href(targetOver(marks, seg)))
+                    : link(part);
                 // 「!」のすぐ後の [文字](URL) は画像になる
                 if (link.startsWith("[") && !out.isEmpty() && out.getLast() instanceof Text(String prev)
                         && prev.endsWith("!")) {
@@ -194,7 +203,7 @@ final class Inline {
                 while (start < end && Character.isWhitespace(text.charAt(start))) start++;
                 while (end > start && Character.isWhitespace(text.charAt(end - 1))) end--;
             }
-            if (start < end) out.add(new Mark(start, end, m.style()));
+            if (start < end) out.add(m.withRange(start, end));
         }
         return out;
     }
@@ -215,7 +224,7 @@ final class Inline {
         var merged = new ArrayList<Segment>();
         for (Segment s : out) {
             Segment last = merged.isEmpty() ? null : merged.getLast();
-            boolean atom = s.styles().contains(Style.CODE) || s.styles().contains(Style.LINK);
+            boolean atom = s.styles().stream().anyMatch(Inline::atom);
             if (last != null && atom && sameAtom(last, s, marks)) {
                 Set<Style> both = EnumSet.noneOf(Style.class);
                 both.addAll(last.styles());
@@ -228,11 +237,28 @@ final class Inline {
         return merged;
     }
 
-    /** 2つの切れ目が、同じコードかリンクの装飾の中にあるか。 */
-    private static boolean sameAtom(Segment a, Segment b, List<Mark> marks) {
+    /** コードとリンクは途中で切らない。 */
+    private static boolean atom(Style s) {
+        return s == Style.CODE || s == Style.LINK || s == Style.PAGE;
+    }
+
+    /** 切れ目に掛かるページへのリンクの、リンク先のページの id。 */
+    private static String targetOver(List<Mark> marks, Segment seg) {
         for (Mark m : marks) {
-            if (m.style() != Style.CODE && m.style() != Style.LINK) continue;
-            if (m.start() <= a.start() && b.end() <= m.end()) return true;
+            if (m.style() == Style.PAGE && m.start() <= seg.start() && seg.end() <= m.end()) return m.target();
+        }
+        return null;
+    }
+
+    /**
+     * 2つの切れ目が、同じコードかリンクの装飾の中にあるか。
+     * リンクは、行き先のページが変わるところで切る（URL のリンクが別々のページへのリンクを覆っていても繋げない）。
+     */
+    private static boolean sameAtom(Segment a, Segment b, List<Mark> marks) {
+        boolean sameTarget = Objects.equals(targetOver(marks, a), targetOver(marks, b));
+        for (Mark m : marks) {
+            if (!atom(m.style())) continue;
+            if (m.start() <= a.start() && b.end() <= m.end() && (m.style() == Style.CODE || sameTarget)) return true;
         }
         return false;
     }
@@ -259,7 +285,7 @@ final class Inline {
             case BOLD -> "**";
             case ITALIC -> "*";
             case STRIKE -> "~~";
-            case CODE, LINK -> "";
+            case CODE, LINK, PAGE -> "";
         };
     }
 
@@ -269,7 +295,7 @@ final class Inline {
             case BOLD -> "strong";
             case ITALIC -> "em";
             case STRIKE -> "del";
-            case CODE, LINK -> throw new IllegalArgumentException(s.name());
+            case CODE, LINK, PAGE -> throw new IllegalArgumentException(s.name());
         };
         return open ? "<" + name + ">" : "</" + name + ">";
     }
@@ -295,6 +321,15 @@ final class Inline {
     private static String link(String s) {
         if (SCHEME.matcher(s).matches()) return "<" + s + ">";
         String target = s.replace("(", "%28").replace(")", "%29").replace(" ", "%20");
+        return "[" + escape(s) + "](" + target + ")";
+    }
+
+    /** ページへのリンク。行き先があれば [文字](パス)、なければふだんの文字。 */
+    private static String pageLink(String s, String href) {
+        if (href == null) return escape(s);
+        // ファイル名に使える文字のうち、リンク先の書き方を壊すもの（& は文字参照になる）を % で書く
+        String target = href.replace("%", "%25").replace(" ", "%20")
+            .replace("(", "%28").replace(")", "%29").replace("#", "%23").replace("&", "%26");
         return "[" + escape(s) + "](" + target + ")";
     }
 

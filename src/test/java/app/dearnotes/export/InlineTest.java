@@ -111,6 +111,42 @@ class InlineTest {
     }
 
     @Test
+    void pageLinkBecomesRelativeLinkOrPlainText() {
+        var marks = List.of(new Mark(2, 4, PAGE, "k"));
+        assertEquals("次は[京都](../京都.md)へ", Inline.write("次は京都へ", marks, id -> "../京都.md"));
+        assertEquals("次は京都へ", Inline.write("次は京都へ", marks, Links.NONE));
+        assertEquals("次は京都へ", Inline.write("次は京都へ", marks));
+    }
+
+    @Test
+    void urlLinkOverTwoPageLinksKeepsBothPageLinks() {
+        var marks = List.of(new Mark(0, 4, LINK), new Mark(0, 2, PAGE, "k"), new Mark(2, 4, PAGE, "o"));
+        assertEquals("[京都](京都.md)[大阪](大阪.md)",
+            Inline.write("京都大阪", marks, id -> id.equals("k") ? "京都.md" : "大阪.md"));
+    }
+
+    @Test
+    void pageLinkPathIsEncoded() {
+        assertEquals("[a\\*b](a%20%28b%29%20%2325%25.md)",
+            Inline.write("a*b", List.of(new Mark(0, 3, PAGE, "k")), id -> "a (b) #25%.md"));
+        // &copy; を文字参照に読ませない
+        assertEquals("[a](A%26copy;B.md)", Inline.write("a", List.of(new Mark(0, 1, PAGE, "k")), id -> "A&copy;B.md"));
+    }
+
+    @Test
+    void exclamationBeforePageLinkDoesNotMakeAnImage() {
+        assertEquals("\\![京都](京都.md)", Inline.write("!京都", List.of(new Mark(1, 3, PAGE, "k")), id -> "京都.md"));
+    }
+
+    @Test
+    void boldPageLinkAndAdjacentLinksToDifferentPages() {
+        Links links = id -> id + ".md";
+        assertEquals("**[京都](k.md)**", Inline.write("京都", List.of(new Mark(0, 2, PAGE, "k"), new Mark(0, 2, BOLD)), links));
+        assertEquals("[京都](k.md)[大阪](o.md)",
+            Inline.write("京都大阪", List.of(new Mark(0, 2, PAGE, "k"), new Mark(2, 4, PAGE, "o")), links));
+    }
+
+    @Test
     void marksOutsideTheTextAreClamped() {
         assertEquals("**ab**", Inline.write("ab", List.of(new Mark(0, 10, BOLD))));
     }

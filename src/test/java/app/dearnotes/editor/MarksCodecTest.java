@@ -38,4 +38,17 @@ class MarksCodecTest {
         assertEquals(List.of(new Mark(0, 2, Style.BOLD)),
             MarksCodec.decode(" [ [0, 2, \"bold\"], [1,2,\"sparkle\"] ] "));
     }
+
+    @Test
+    void pageLinkKeepsItsTarget() {
+        var marks = List.of(new Mark(2, 4, Style.PAGE, "0192f3c1-aaaa"));
+        assertEquals("[[2,4,\"page\",\"0192f3c1-aaaa\"]]", MarksCodec.encode(marks));
+        assertEquals(marks, MarksCodec.decode(MarksCodec.encode(marks)));
+    }
+
+    @Test
+    void pageLinkWithoutTargetIsDropped() {
+        assertEquals(List.of(new Mark(0, 1, Style.BOLD)), MarksCodec.decode("[[0,1,\"bold\"],[2,4,\"page\"]]"));
+        assertEquals(List.of(), MarksCodec.decode("[[0,1,\"bold\",\"x\"]]"));
+    }
 }

@@ -257,6 +257,251 @@ class PageEditorUiTest {
     }
 
     @Test
+    void pageLinkSurvivesLoadAndRead() throws Exception {
+        var links = List.of(new Mark(2, 4, Mark.Style.PAGE, "p1"), new Mark(4, 6, Mark.Style.PAGE, "p2"));
+        List<Mark> marks = fx(() -> {
+            var area = new org.fxmisc.richtext.StyleClassedTextArea();
+            StyledText.load(area, "次は京都大阪へ", links);
+            return StyledText.read(area);
+        });
+        assertEquals(links, marks);
+    }
+
+    @Test
+    void typingAtTheEndOfPageLinkIsNotLinked() throws Exception {
+        var p = pages.create(null, "リンク");
+        blocks.save(List.of(Block.empty(p.id(), BlockType.PARAGRAPH, 1024)
+            .withContent("京都", List.of(new Mark(0, 2, Mark.Style.PAGE, "x")))), List.of());
+        reopen(p.id());
+        focusEndOf(0);
+        type("へ");
+        fx(() -> {
+            current().area().moveTo(1);
+            return null;
+        });
+        type("の");
+        assertEquals("京の都へ", fx(() -> current().block().text()));
+        assertEquals(List.of(new Mark(0, 3, Mark.Style.PAGE, "x")), fx(() -> current().block().marks()));
+    }
+
+    @Test
+    void shortcutTypedBeforePageLinkKeepsTheWholeLink() throws Exception {
+        var p = pages.create(null, "リンク");
+        blocks.save(List.of(Block.empty(p.id(), BlockType.PARAGRAPH, 1024)
+            .withContent("京都", List.of(new Mark(0, 2, Mark.Style.PAGE, "x")))), List.of());
+        reopen(p.id());
+        fx(() -> {
+            window.editor().views().getFirst().focusAt(0);
+            return null;
+        });
+        settle();
+        type("# ");
+        assertEquals(BlockType.H1, fx(() -> current().block().type()));
+        assertEquals("京都", fx(() -> current().block().text()));
+        assertEquals(List.of(new Mark(0, 2, Mark.Style.PAGE, "x")), fx(() -> current().block().marks()));
+    }
+
+    @Test
+    void pastedPageLinkStaysLinkedButPastedPlainTextDoesNot() throws Exception {
+        var p = pages.create(null, "リンク");
+        blocks.save(List.of(Block.empty(p.id(), BlockType.PARAGRAPH, 1024)
+            .withContent("京都", List.of(new Mark(0, 2, Mark.Style.PAGE, "x")))), List.of());
+        reopen(p.id());
+        focusEndOf(0);
+        fx(() -> {
+            current().area().selectRange(0, 2);
+            current().area().copy();
+            current().area().moveTo(2);
+            return null;
+        });
+        settle();
+        type(" ");
+        press(KeyCode.V, KeyMod.SHORTCUT);
+        assertEquals("京都 京都", fx(() -> current().block().text()));
+        assertEquals(List.of(new Mark(0, 2, Mark.Style.PAGE, "x"), new Mark(3, 5, Mark.Style.PAGE, "x")),
+            fx(() -> current().block().marks()));
+        fx(() -> {
+            var content = new javafx.scene.input.ClipboardContent();
+            content.putString("へ");
+            javafx.scene.input.Clipboard.getSystemClipboard().setContent(content);
+            return null;
+        });
+        press(KeyCode.V, KeyMod.SHORTCUT);
+        assertEquals("京都 京都へ", fx(() -> current().block().text()));
+        assertEquals(List.of(new Mark(0, 2, Mark.Style.PAGE, "x"), new Mark(3, 5, Mark.Style.PAGE, "x")),
+            fx(() -> current().block().marks()));
+    }
+
+    @Test
+    void typingAtTheStartOfPageLinkIsNotLinked() throws Exception {
+        var p = pages.create(null, "リンク");
+        blocks.save(List.of(Block.empty(p.id(), BlockType.PARAGRAPH, 1024)
+            .withContent("京都", List.of(new Mark(0, 2, Mark.Style.PAGE, "x")))), List.of());
+        reopen(p.id());
+        fx(() -> {
+            window.editor().views().getFirst().focusAt(0);
+            return null;
+        });
+        settle();
+        type("明日は");
+        assertEquals("明日は京都", fx(() -> current().block().text()));
+        assertEquals(List.of(new Mark(3, 5, Mark.Style.PAGE, "x")), fx(() -> current().block().marks()));
+    }
+
+    @Test
+    void undoingDeleteAtTheEndOfPageLinkKeepsTheLink() throws Exception {
+        var p = pages.create(null, "リンク");
+        blocks.save(List.of(Block.empty(p.id(), BlockType.PARAGRAPH, 1024)
+            .withContent("京都", List.of(new Mark(0, 2, Mark.Style.PAGE, "x")))), List.of());
+        reopen(p.id());
+        focusEndOf(0);
+        press(KeyCode.BACK_SPACE);
+        assertEquals("京", fx(() -> current().block().text()));
+        press(KeyCode.Z, KeyMod.SHORTCUT);
+        assertEquals("京都", fx(() -> current().block().text()));
+        assertEquals(List.of(new Mark(0, 2, Mark.Style.PAGE, "x")), fx(() -> current().block().marks()));
+    }
+
+    @Test
+    void movingCaretAwayClosesPageSuggestions() throws Exception {
+        pages.create(null, "京都");
+        focusFirstBlock();
+        type("東京と[[京");
+        fx(() -> {
+            current().area().moveTo(0);
+            return null;
+        });
+        settle();
+        press(KeyCode.ENTER);
+        // 候補は閉じているので、Enter はふつうに行を分ける
+        assertEquals(List.of("paragraph:0:", "paragraph:0:東京と[[京"), summary());
+        assertEquals(1, pages.findByTitle("京", 8).size());
+    }
+
+    @Test
+    void escapeKeepsSuggestionsClosedForThatBracket() throws Exception {
+        focusFirstBlock();
+        type("[[奈良");
+        press(KeyCode.ESCAPE);
+        type("x");
+        press(KeyCode.ENTER);
+        assertEquals(List.of("paragraph:0:[[奈良x", "paragraph:0:"), summary());
+        assertEquals(List.of(), pages.findByTitle("奈良", 8));
+    }
+
+    @Test
+    void pageLinkInsideBoldStaysBold() throws Exception {
+        var kyoto = pages.create(null, "京都");
+        focusFirstBlock();
+        type("[[京");
+        fx(() -> {
+            current().area().selectRange(0, 3);
+            return null;
+        });
+        press(KeyCode.B, KeyMod.SHORTCUT);
+        fx(() -> {
+            current().area().moveTo(3);
+            return null;
+        });
+        settle();
+        type("都");
+        press(KeyCode.ENTER);
+        assertEquals(List.of(new Mark(0, 2, Mark.Style.BOLD), new Mark(0, 2, Mark.Style.PAGE, kyoto.id())),
+            fx(() -> current().block().marks()));
+    }
+
+    @Test
+    void typingBracketsAndEnterInsertsPageLink() throws Exception {
+        var kyoto = pages.create(null, "京都");
+        focusFirstBlock();
+        type("次は「「京");
+        press(KeyCode.ENTER);
+        type("へ");
+        assertEquals("次は京都へ", fx(() -> current().block().text()));
+        assertEquals(List.of(new Mark(2, 4, Mark.Style.PAGE, kyoto.id())), fx(() -> current().block().marks()));
+        assertEquals(1, summary().size());
+    }
+
+    @Test
+    void pageLinkAtLineStartDoesNotBecomeMarkdownShortcut() throws Exception {
+        var rule = pages.create(null, "---");
+        var hash = pages.create(null, "#");
+        focusFirstBlock();
+        type("[[--");
+        press(KeyCode.ENTER);
+        assertEquals(List.of("paragraph:0:---"), summary());
+        assertEquals(List.of(new Mark(0, 3, Mark.Style.PAGE, rule.id())), fx(() -> current().block().marks()));
+        fx(() -> {
+            current().setContent("", List.of());
+            return null;
+        });
+        type("[[#");
+        press(KeyCode.ENTER);
+        type(" ");
+        assertEquals(List.of("paragraph:0:# "), summary());
+        assertEquals(List.of(new Mark(0, 1, Mark.Style.PAGE, hash.id())), fx(() -> current().block().marks()));
+    }
+
+    @Test
+    void unknownNameCreatesChildPageAndStaysHere() throws Exception {
+        focusFirstBlock();
+        String here = fx(() -> window.editor().page().id());
+        type("[[奈良");
+        press(KeyCode.ENTER);
+        var nara = pages.findByTitle("奈良", 8).getFirst();
+        assertEquals(here, nara.parentId());
+        assertEquals(here, fx(() -> window.editor().page().id()));
+        assertEquals(List.of(new Mark(0, 2, Mark.Style.PAGE, nara.id())), fx(() -> current().block().marks()));
+    }
+
+    @Test
+    void openingPageLinkMovesToAliveTargetsOnly() throws Exception {
+        var kyoto = pages.create(null, "京都");
+        fx(() -> {
+            window.openPage(kyoto.id(), null);
+            return null;
+        });
+        settle();
+        assertEquals(kyoto.id(), fx(() -> window.editor().page().id()));
+
+        var other = pages.create(null, "別");
+        fx(() -> {
+            window.open(other);
+            return null;
+        });
+        settle();
+        pages.trash(kyoto.id(), 1);
+        fx(() -> {
+            window.openPage(kyoto.id(), null);
+            window.openPage("no-such-page", null);
+            return null;
+        });
+        settle();
+        assertEquals(other.id(), fx(() -> window.editor().page().id()));
+    }
+
+    @Test
+    void backlinksListPagesThatLinkHereAndOpenTheRow() throws Exception {
+        var kyoto = pages.create(null, "京都");
+        var trip = pages.create(null, "旅行");
+        Block b = Block.empty(trip.id(), BlockType.PARAGRAPH, 1024)
+            .withContent("次は京都へ", List.of(new Mark(2, 4, Mark.Style.PAGE, kyoto.id())));
+        blocks.save(List.of(b), List.of());
+        reopen(kyoto.id());
+        assertEquals(List.of("📝 旅行"), fx(() -> window.editor().backlinks().titles()));
+        assertTrue(fx(() -> window.editor().backlinks().isVisible()));
+
+        fx(() -> {
+            window.editor().backlinks().open(0);
+            return null;
+        });
+        settle();
+        assertEquals(trip.id(), fx(() -> window.editor().page().id()));
+        assertEquals(b.id(), fx(() -> current().block().id()));
+        assertFalse(fx(() -> window.editor().backlinks().isVisible()));
+    }
+
+    @Test
     void deleteOnDividerRemovesItAndKeepsNextBlock() throws Exception {
         focusFirstBlock();
         type("---");

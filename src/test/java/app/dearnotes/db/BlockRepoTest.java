@@ -66,4 +66,27 @@ class BlockRepoTest extends DbTestBase {
         blocks.save(List.of(b.withCollapsed(false)), List.of());
         assertFalse(blocks.listByPage(p.id()).getFirst().collapsed());
     }
+
+    @Test
+    void linksToFindsBlocksOnAlivePagesOnly() throws Exception {
+        Page kyoto = pages.create(null, "京都");
+        Page trip = pages.create(null, "旅行");
+        Page old = pages.create(null, "古い");
+        var link = List.of(new Mark(2, 4, Mark.Style.PAGE, kyoto.id()));
+        Block b = Block.empty(trip.id(), BlockType.PARAGRAPH, 1).withContent("次は京都へ", link);
+        blocks.save(List.of(
+            b,
+            Block.empty(trip.id(), BlockType.PARAGRAPH, 2).withContent("京都", List.of()),
+            Block.empty(old.id(), BlockType.PARAGRAPH, 1).withContent("次は京都へ", link),
+            Block.empty(kyoto.id(), BlockType.PARAGRAPH, 1)
+                .withContent("自分", List.of(new Mark(0, 2, Mark.Style.PAGE, kyoto.id())))),
+            List.of());
+        pages.trash(old.id(), 1);
+
+        List<BlockRepo.Backlink> hits = blocks.linksTo(kyoto.id());
+        assertEquals(List.of(b.id()), hits.stream().map(BlockRepo.Backlink::blockId).toList());
+        assertEquals("旅行", hits.getFirst().pageTitle());
+        assertEquals("次は京都へ", hits.getFirst().text());
+        assertEquals(List.of(), blocks.linksTo(trip.id()));
+    }
 }

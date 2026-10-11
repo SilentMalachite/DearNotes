@@ -38,6 +38,36 @@ public final class BlockRepo implements BlockStore {
         });
     }
 
+    /** ほかのページからのリンク。text はリンクのあるブロックの文字。 */
+    public record Backlink(String pageId, String pageTitle, String pageIcon, boolean daily,
+                           String blockId, String text) {}
+
+    /**
+     * target のページへのリンクを持つブロック。ゴミ箱のページと target 自身は入れない。
+     * marks の JSON を LIKE で探す。ページの id は UUID なので % と _ を含まない。
+     */
+    public List<Backlink> linksTo(String target) throws SQLException {
+        return db.read(c -> {
+            try (var ps = c.prepareStatement("""
+                    SELECT p.id, p.title, p.icon, p.daily_date, b.id, b.text
+                    FROM blocks b JOIN pages p ON p.id = b.page_id
+                    WHERE b.marks LIKE ? AND p.deleted_at IS NULL AND p.id <> ?
+                    ORDER BY p.updated_at DESC, p.id, b.sort_key
+                    LIMIT 50""")) {
+                ps.setString(1, "%\"page\",\"" + target + "\"]%");
+                ps.setString(2, target);
+                try (var rs = ps.executeQuery()) {
+                    var out = new ArrayList<Backlink>();
+                    while (rs.next()) {
+                        out.add(new Backlink(rs.getString(1), rs.getString(2), rs.getString(3),
+                            rs.getString(4) != null, rs.getString(5), rs.getString(6)));
+                    }
+                    return out;
+                }
+            }
+        });
+    }
+
     /**
      * 変わったブロックを書き、消えたブロックを消す。1トランザクション。
      * ページが先に消えていたブロックは書かずに捨てる（外部キーで失敗し続けないように）。
