@@ -407,6 +407,15 @@ final class PageEditor extends VBox implements BlockView.Host {
     }
 
     @Override
+    public void linkQuery(BlockView v) {
+    }
+
+    @Override
+    public void blurred(BlockView v) {
+        slash.update(v, null);
+    }
+
+    @Override
     public void pasteLines(BlockView v, String text) {
         List<PasteParser.Line> lines = PasteParser.parse(text);
         if (lines.isEmpty()) return;
@@ -479,6 +488,10 @@ final class PageEditor extends VBox implements BlockView.Host {
     @Override
     public void openLink(String url) {
         s.openLink().accept(url);
+    }
+
+    @Override
+    public void openPage(String pageId) {
     }
 
     @Override

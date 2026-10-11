@@ -257,6 +257,34 @@ class PageEditorUiTest {
     }
 
     @Test
+    void pageLinkSurvivesLoadAndRead() throws Exception {
+        var links = List.of(new Mark(2, 4, Mark.Style.PAGE, "p1"), new Mark(4, 6, Mark.Style.PAGE, "p2"));
+        List<Mark> marks = fx(() -> {
+            var area = new org.fxmisc.richtext.StyleClassedTextArea();
+            StyledText.load(area, "次は京都大阪へ", links);
+            return StyledText.read(area);
+        });
+        assertEquals(links, marks);
+    }
+
+    @Test
+    void typingAtTheEndOfPageLinkIsNotLinked() throws Exception {
+        var p = pages.create(null, "リンク");
+        blocks.save(List.of(Block.empty(p.id(), BlockType.PARAGRAPH, 1024)
+            .withContent("京都", List.of(new Mark(0, 2, Mark.Style.PAGE, "x")))), List.of());
+        reopen(p.id());
+        focusEndOf(0);
+        type("へ");
+        fx(() -> {
+            current().area().moveTo(1);
+            return null;
+        });
+        type("の");
+        assertEquals("京の都へ", fx(() -> current().block().text()));
+        assertEquals(List.of(new Mark(0, 3, Mark.Style.PAGE, "x")), fx(() -> current().block().marks()));
+    }
+
+    @Test
     void deleteOnDividerRemovesItAndKeepsNextBlock() throws Exception {
         focusFirstBlock();
         type("---");

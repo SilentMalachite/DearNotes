@@ -199,6 +199,7 @@
     -rtfx-background-color: #f1f0ec;
 }
 .styled-text-area .m-link { -fx-fill: -dn-accent; -fx-underline: true; }
+.styled-text-area .m-page { -fx-fill: -dn-accent; -fx-underline: true; }
 
 /* ---- 目次 ---- */
 

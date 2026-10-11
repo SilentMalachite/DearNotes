@@ -11,10 +11,14 @@ import org.fxmisc.richtext.model.StyleSpan;
 import org.fxmisc.richtext.model.StyleSpans;
 import org.fxmisc.richtext.model.StyleSpansBuilder;
 
-/** Mark の並びと RichTextFX の StyleSpans を行き来する。CSS クラスは「m-太字の名前」。 */
+/**
+ * Mark の並びと RichTextFX の StyleSpans を行き来する。CSS クラスは「m-太字の名前」。
+ * ページへのリンクは「m-page」と「to-ページの id」の2つで持つ。
+ */
 final class StyledText {
 
     private static final String PREFIX = "m-";
+    private static final String TARGET = "to-";
 
     private StyledText() {}
 
@@ -43,10 +47,12 @@ final class StyledText {
         for (int p = 0; p < area.getParagraphs().size(); p++) {
             int pos = offset;
             for (StyleSpan<Collection<String>> span : area.getStyleSpans(p)) {
+                String target = targetOf(span.getStyle());
                 for (String cls : span.getStyle()) {
                     if (!cls.startsWith(PREFIX) || span.getLength() == 0) continue;
                     try {
-                        out.add(new Mark(pos, pos + span.getLength(), Mark.Style.fromKey(cls.substring(PREFIX.length()))));
+                        Mark.Style style = Mark.Style.fromKey(cls.substring(PREFIX.length()));
+                        out.add(new Mark(pos, pos + span.getLength(), style, style == Mark.Style.PAGE ? target : null));
                     } catch (IllegalArgumentException ignored) {
                         // 知らないクラス
                     }
@@ -72,7 +78,10 @@ final class StyledText {
             if (prev != null && cut > prev) {
                 var classes = new ArrayList<String>();
                 for (Mark m : marks) {
-                    if (m.start() <= prev && m.end() >= cut) classes.add(css(m.style()));
+                    if (m.start() <= prev && m.end() >= cut) {
+                        classes.add(css(m.style()));
+                        if (m.target() != null) classes.add(TARGET + m.target());
+                    }
                 }
                 builder.add(classes, cut - prev);
             }
@@ -96,5 +105,26 @@ final class StyledText {
             return next;
         });
         area.setStyleSpans(sel.getStart(), updated);
+    }
+
+    /** target のページへのリンクにするクラス。 */
+    static List<String> pageClasses(String target) {
+        return List.of(css(Mark.Style.PAGE), TARGET + target);
+    }
+
+    /** ページへのリンクなら、そのページの id。そうでなければ null。 */
+    static String targetOf(Collection<String> classes) {
+        if (!classes.contains(css(Mark.Style.PAGE))) return null;
+        for (String cls : classes) {
+            if (cls.startsWith(TARGET)) return cls.substring(TARGET.length());
+        }
+        return null;
+    }
+
+    /** ページへのリンクのクラスを外す。ほかの装飾は残す。 */
+    static Collection<String> withoutPage(Collection<String> classes) {
+        return classes.stream()
+            .filter(c -> !c.equals(css(Mark.Style.PAGE)) && !c.startsWith(TARGET))
+            .toList();
     }
 }

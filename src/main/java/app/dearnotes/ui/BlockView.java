@@ -41,11 +41,16 @@ final class BlockView extends HBox {
         void moveBy(BlockView v, int delta);
         void convert(BlockView v, BlockType type, int prefixLength);
         void slashQuery(BlockView v, String query);
+        /** 文字が変わった。「[[語句」を打っていればページの候補を出す。 */
+        void linkQuery(BlockView v);
+        /** フォーカスが外れた。候補の窓を閉じる。 */
+        void blurred(BlockView v);
         boolean slashKey(BlockView v, KeyEvent e);
         void pasteLines(BlockView v, String text);
         void scroll(double deltaY);
         void focused(BlockView v);
         void openLink(String url);
+        void openPage(String pageId);
         void dragStarted(BlockView v, MouseEvent e);
         void toggleFold(BlockView v);
     }
@@ -119,11 +124,12 @@ final class BlockView extends HBox {
             // 日本語入力では「＃　」がまとめて確定されることもあるので、短い入力なら調べる
             int n = ch.getInserted().length();
             if (!loading && n >= 1 && n <= 4) Platform.runLater(this::detectShortcut);
+            if (!loading && n >= 1) Platform.runLater(() -> unlinkTail(ch.getPosition(), n));
         });
         area.focusedProperty().addListener((obs, was, now) -> {
             updatePlaceholder();
             if (now) host.focused(this);
-            else host.slashQuery(this, null);
+            else host.blurred(this);
         });
         // 日本語入力で変換中の文字があるあいだは、ショートカットも Enter も IME に任せる
         area.addEventFilter(javafx.scene.input.InputMethodEvent.INPUT_METHOD_TEXT_CHANGED,
@@ -173,6 +179,13 @@ final class BlockView extends HBox {
     void setContent(String text, List<Mark> marks) {
         block = block.withContent(text, marks);
         load();
+    }
+
+    /** from から to を、target のページへのリンクにした name に置き換える。カーソルはリンクの後ろ。 */
+    void insertPageLink(int from, int to, String name, String target) {
+        area.replaceText(from, to, name);
+        area.setStyle(from, from + name.length(), StyledText.pageClasses(target));
+        focusAt(from + name.length());
     }
 
     void setListNumber(int n) {
@@ -294,6 +307,21 @@ final class BlockView extends HBox {
         host.edited(this);
         // コードの中の「/」はただの文字。候補は出さず、出ていれば閉じる
         host.slashQuery(this, block.type() == BlockType.CODE ? null : SlashCommands.queryOf(text));
+        host.linkQuery(this);
+    }
+
+    /**
+     * リンクの末尾に打った文字から、ページへのリンクの印を外す。
+     * RichTextFX は前の文字の装飾を引き継ぐので、そのままだと打った文字もリンクになる。
+     * 後ろの文字も同じリンクなら、リンクの途中の入力なので残す。
+     */
+    private void unlinkTail(int at, int length) {
+        int end = at + length;
+        if (at == 0 || end > area.getLength()) return;
+        String target = StyledText.targetOf(area.getStyleOfChar(at - 1));
+        if (target == null || !target.equals(StyledText.targetOf(area.getStyleOfChar(at)))) return;
+        if (end < area.getLength() && target.equals(StyledText.targetOf(area.getStyleOfChar(end)))) return;
+        area.setStyleSpans(at, area.getStyleSpans(at, end).mapStyles(StyledText::withoutPage));
     }
 
     /** 行頭に「# 」などを打ったら、その種類に変える。 */
@@ -421,11 +449,16 @@ final class BlockView extends HBox {
         return area.lineIndex(last, area.getCaretColumn()) == area.getParagraphLinesCount(last) - 1;
     }
 
-    /** Cmd/Ctrl を押しながらリンクを押すと開く。 */
+    /** Cmd/Ctrl を押しながらリンクを押すと開く。ページへのリンクなら、そのページへ移る。 */
     private void onClicked(MouseEvent e) {
         if (!e.isShortcutDown()) return;
         int at = area.hit(e.getX(), e.getY()).getInsertionIndex();
         for (Mark m : block.marks()) {
+            if (m.style() == Mark.Style.PAGE && m.start() <= at && at <= m.end()) {
+                host.openPage(m.target());
+                e.consume();
+                return;
+            }
             if (m.style() == Mark.Style.LINK && m.start() <= at && at <= m.end()) {
                 host.openLink(block.text().substring(m.start(), m.end()).strip());
                 e.consume();
