@@ -1,0 +1,32 @@
+name: release
+
+# v1.2.3 のようなタグを push すると、各 OS でインストーラーを作る
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+jobs:
+  package:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, macos-15-intel, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: '25' }
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Install WiX (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          dotnet tool install --global wix --version 5.0.2
+          wix extension add -g WixToolset.Util.wixext/5.0.2 WixToolset.UI.wixext/5.0.2
+      - run: ./gradlew test jpackage
+        shell: bash
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DearNotes-${{ matrix.os }}
+          path: build/jpackage/*

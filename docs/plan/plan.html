@@ -1,0 +1,541 @@
+<!doctype html>
+<html lang="ja">
+<meta charset="utf-8">
+<title>DearNotes Plan</title>
+<link rel="stylesheet" href="htmlplan.css">
+<script src="htmlplan.js" defer></script>
+<style data-mock-shared>
+  .ui { font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic UI", "Segoe UI", sans-serif; color: #37352f; background: #fff; border: 1px solid #e3e2de; border-radius: 10px; overflow: hidden; }
+  .ui .bar { display: flex; justify-content: space-between; align-items: center; padding: 7px 14px; border-bottom: 1px solid #efeeea; font-size: 12.5px; color: #8a877f; }
+  .ui .page { padding: 14px 22px 18px; }
+  .ui h2 { font-size: 22px; margin: 0 0 8px; font-weight: 700; }
+  .ui .b { padding: 2px 0; } .ui .h { font-size: 16px; font-weight: 650; margin-top: 6px; }
+  .ui .todo::before { content: "☐ "; color: #8a877f; } .ui .done { color: #9b9a97; text-decoration: line-through; } .ui .done::before { content: "☑ "; }
+  .ui .bul::before { content: "•  "; } .ui .cur { border-right: 2px solid #2383e2; }
+  .ui .menu { width: 250px; border: 1px solid #e3e2de; border-radius: 8px; box-shadow: 0 8px 22px rgba(15,15,15,.14); background: #fff; margin: 4px 0 0 0; font-size: 13px; }
+  .ui .menu div { padding: 6px 12px; display: flex; justify-content: space-between; } .ui .menu .on { background: #f1f1ef; } .ui .menu small { color: #9b9a97; }
+  .ui .side { background: #f7f6f3; padding: 10px 8px; font-size: 13.5px; }
+  .ui .side .it { padding: 4px 8px; border-radius: 5px; } .ui .side .it.on { background: #e9e8e4; font-weight: 600; }
+  .ui .side .sec { color: #9b9a97; font-size: 11.5px; padding: 10px 8px 3px; }
+  .ui .side .ind { padding-left: 24px; } .ui .side .ind2 { padding-left: 40px; }
+  .ui .today { margin: 2px 8px 8px; padding: 6px 10px; border-radius: 6px; background: #fff; border: 1px solid #e3e2de; font-weight: 600; }
+  .ui .q { padding: 10px 14px; border-bottom: 1px solid #efeeea; font-size: 15px; }
+  .ui .r { padding: 8px 14px; border-bottom: 1px solid #f4f3f0; } .ui .r b { display: block; } .ui .r small { color: #787774; } .ui .r mark { background: #fbf3db; }
+  .ui .ok { color: #1f7a52; } .ui .bad { color: #b42318; font-weight: 650; } .ui .dim { color: #9b9a97; }
+</style>
+<body>
+
+<header>
+  <h1>DearNotes：Java 25 のメモアプリ新規作成</h1>
+  <doc-changes new="34"></doc-changes>
+  <details class="thread"><summary>Why · 1 request</summary>
+    <doc-quote via="prompt" from="the user">Java25以上とSQLiteを使って、Notionのような日常的に使えるメモアプリを作成してください。macとWindows対応でjpackageをつかって配布したいです。</doc-quote>
+  </details>
+</header>
+
+<main>
+<doc-plan>
+
+<!-- ═════ 1 ═════ -->
+<doc-claim>
+  <p>ユーザーは Notion と同じくブロック単位で書く。</p>
+  <doc-mock frame="none" w="460"><template>
+<div class="ui">
+  <div class="bar"><span>プロジェクト / 買い物リスト</span><span class="ok">保存済み</span></div>
+  <div class="page">
+    <h2>買い物リスト</h2>
+    <div class="b h">週末</div>
+    <div class="b done">牛乳</div>
+    <div class="b todo">コーヒー豆 <b>200g</b></div>
+    <div class="b bul">電池は単3を4本</div>
+    <div class="b"><span class="cur" data-ref="slash">/見</span></div>
+    <div class="menu" data-ref="menu">
+      <div class="on">見出し 1 <small># </small></div>
+      <div>見出し 2 <small>## </small></div>
+      <div>見出し 3 <small>### </small></div>
+    </div>
+  </div>
+</div></template>
+    <doc-pin ref="slash" anchor="r" title="「/」でメニュー">文字を足すと候補が絞られる。</doc-pin>
+    <doc-pin ref="menu" anchor="br" title="Markdown 記法も使える">右の記号を行頭に打つと同じ結果になる。</doc-pin>
+  </doc-mock>
+  <doc-ask id="editor">
+    <p>エディタ部分は何で作りますか？</p>
+    <label><input type="radio" name="editor" value="richtextfx" checked> JavaFX + RichTextFX <small>行の中で太字・リンクを使える。全部 Java</small></label>
+    <label><input type="radio" name="editor" value="textarea"> JavaFX の TextArea だけ <small>依存が減る。行内の装飾はない。marks 列がなくなる</small></label>
+    <label><input type="radio" name="editor" value="webview"> JavaFX WebView + JS エディタ <small>Notion に最も近い。JS も書く。claim 1.2〜1.4 が変わる</small></label>
+  </doc-ask>
+  <div data-if="editor=webview"><doc-note tone="warn">WebView は javafx.web を同梱する。インストーラーは約 60MB 大きくなる。</doc-note></div>
+
+  <doc-claim>
+    <p>ブロックは1つの record で、種類は10個ある。</p>
+    <doc-code title="model/Block.java · sketch" lang="java">
+<script type="text/plain">
+public enum BlockType {
+  PARAGRAPH, H1, H2, H3, BULLET, NUMBERED, TODO, QUOTE, CODE, DIVIDER
+}
+
+public record Mark(int start, int end, Style style) {
+  public enum Style { BOLD, ITALIC, STRIKE, CODE, LINK }
+}
+
+public record Block(
+    String id,            // UUID v7 (時刻順)
+    String pageId,
+    BlockType type,
+    String text,
+    List<Mark> marks,     // 行内の装飾
+    boolean checked,      // TODO だけが使う
+    int indent,
+    double sortKey) {
+
+  public Block withType(BlockType t) {
+    return new Block(id, pageId, t, text, marks, checked, indent, sortKey);
+  }
+}
+</script>
+      <doc-pin line="11" title="UUID v7">作成順に並ぶので索引が散らばらない。</doc-pin>
+    </doc-code>
+  </doc-claim>
+
+  <doc-claim>
+    <p>行頭の「/」や「# 」でブロックの種類が変わる。</p>
+    <doc-calls title="キー入力" caption="2つの入口は同じ convert() を呼ぶ。">
+<script type="text/plain">
++ **BlockView.onKeyTyped**(e)                       @ src/main/java/app/dearnotes/ui/BlockView.java:60
++   **MarkdownShortcuts.match**(prefix)             @ src/main/java/app/dearnotes/editor/MarkdownShortcuts.java:8
++   **PageEditor.convert**(block, type)             @ src/main/java/app/dearnotes/ui/PageEditor.java:110
++     AutoSaver.changed(block)                      @ src/main/java/app/dearnotes/save/AutoSaver.java:30
+
++ **SlashMenu.show**(blockView, query)              @ src/main/java/app/dearnotes/ui/SlashMenu.java:25
++   on Enter → PageEditor.convert(block, type)      @ src/main/java/app/dearnotes/ui/PageEditor.java:110
+</script>
+    </doc-calls>
+    <doc-claim at="src/main/java/app/dearnotes/editor/MarkdownShortcuts.java:8">
+      <p><b>MarkdownShortcuts.java:8</b> · match()</p>
+      <doc-code title="editor/MarkdownShortcuts.java · sketch" lang="java" start="8">
+<script type="text/plain">
+static Optional<BlockType> match(String prefix) {
+  return Optional.ofNullable(switch (prefix) {
+    case "# "        -> BlockType.H1;
+    case "## "       -> BlockType.H2;
+    case "### "      -> BlockType.H3;
+    case "- ", "* "  -> BlockType.BULLET;
+    case "1. "       -> BlockType.NUMBERED;
+    case "[] "       -> BlockType.TODO;
+    case "> "        -> BlockType.QUOTE;
+    case "```"       -> BlockType.CODE;
+    case "---"       -> BlockType.DIVIDER;
+    default          -> null;
+  });
+}
+</script>
+      </doc-code>
+    </doc-claim>
+  </doc-claim>
+
+  <doc-claim>
+    <p>Enter で次のブロックを作り、空の行で Backspace を押すと消える。</p>
+    <doc-calls title="行の追加と削除" caption="カーソルは常に隣のブロックへ移る。">
+<script type="text/plain">
++ **BlockView.onKeyPressed**(e)                     @ src/main/java/app/dearnotes/ui/BlockView.java:80
++   ENTER → **PageEditor.splitAt**(block, caret)    @ src/main/java/app/dearnotes/ui/PageEditor.java:140
++   BACKSPACE at 0 → **PageEditor.mergeUp**(block)  @ src/main/java/app/dearnotes/ui/PageEditor.java:170
++   TAB / SHIFT+TAB → **PageEditor.indent**(block, ±1)  @ src/main/java/app/dearnotes/ui/PageEditor.java:200
+</script>
+    </doc-calls>
+  </doc-claim>
+
+  <doc-claim>
+    <p>ドラッグで順番を変えると、1行の sort_key だけが変わる。</p>
+    <doc-code title="editor/SortKeys.java · sketch" lang="java">
+<script type="text/plain">
+/** prev と next の間に入れる。間が狭すぎたら null。 */
+static Double between(Double prev, Double next) {
+  double lo = prev == null ? 0 : prev;
+  double hi = next == null ? lo + 1024 : next;
+  double mid = (lo + hi) / 2;
+  return (mid <= lo || mid >= hi) ? null : mid;
+}
+// null のとき: そのページの全ブロックを 1024 間隔で振り直す
+</script>
+    </doc-code>
+  </doc-claim>
+</doc-claim>
+
+<!-- ═════ 2 ═════ -->
+<doc-claim>
+  <p>ページはサイドバーで入れ子になり、「今日」で日記を開く。</p>
+  <doc-mock frame="none" w="300"><template>
+<div class="ui"><div class="side">
+  <div class="today" data-ref="today">📅 今日 · 10月11日</div>
+  <div class="sec">ページ</div>
+  <div class="it">▾ 📁 プロジェクト</div>
+  <div class="it ind on">📝 買い物リスト</div>
+  <div class="it ind">▸ 📝 読書メモ</div>
+  <div class="it">📝 アイデア</div>
+  <div class="sec" data-ref="daily">デイリー</div>
+  <div class="it">2026-10-11</div>
+  <div class="it">2026-10-10</div>
+  <div class="sec">🗑 ゴミ箱</div>
+</div></div></template>
+    <doc-pin ref="today" anchor="r" title="1日1ページ">なければ作る。</doc-pin>
+    <doc-pin ref="daily" anchor="r" title="新しい日付が上"></doc-pin>
+  </doc-mock>
+
+  <doc-claim>
+    <p>サイドバーは parent_id からページの木を作る。</p>
+    <doc-calls title="サイドバー" caption="1回の SELECT で全ページを読み、メモリで木にする。">
+<script type="text/plain">
++ <**Sidebar**/>                                    @ src/main/java/app/dearnotes/ui/Sidebar.java:20
++   **PageRepo.listAlive**()                        @ src/main/java/app/dearnotes/db/PageRepo.java:30
++   **Sidebar.buildTree**(pages)                    @ src/main/java/app/dearnotes/ui/Sidebar.java:70   -- TreeView<Page>
++   on drop → **PageRepo.move**(id, parentId, sortKey)  @ src/main/java/app/dearnotes/db/PageRepo.java:60
+</script>
+    </doc-calls>
+  </doc-claim>
+
+  <doc-claim>
+    <p>「今日」は今日のページを開き、なければ作る。</p>
+    <doc-code title="db/PageRepo.java · sketch" lang="sql">
+<script type="text/plain">
+-- openDaily(date): 2回押しても1ページだけ
+INSERT INTO pages (id, title, daily_date, sort_key, created_at, updated_at)
+VALUES (?, ?, ?, 0, ?, ?)
+ON CONFLICT (daily_date) DO NOTHING;
+
+SELECT * FROM pages WHERE daily_date = ? AND deleted_at IS NULL;
+</script>
+      <doc-pin line="4" title="daily_date は UNIQUE"></doc-pin>
+    </doc-code>
+  </doc-claim>
+
+  <doc-claim>
+    <p>削除したページはゴミ箱に入り、30日後に消える。</p>
+    <doc-code title="db/PageRepo.java · sketch" lang="sql">
+<script type="text/plain">
+-- trash(id): 子ページも一緒にゴミ箱へ
+WITH RECURSIVE sub(id) AS (
+  SELECT ?
+  UNION ALL
+  SELECT p.id FROM pages p JOIN sub ON p.parent_id = sub.id
+)
+UPDATE pages SET deleted_at = ? WHERE id IN sub;
+
+-- 起動時に1回: 30日より前のものを消す (blocks は CASCADE)
+DELETE FROM pages WHERE deleted_at < ?;
+</script>
+    </doc-code>
+  </doc-claim>
+</doc-claim>
+
+<!-- ═════ 3 ═════ -->
+<doc-claim>
+  <p>アプリは変更を自動で保存する。保存ボタンはない。</p>
+  <doc-machine name="save" caption="状態をタップすると、右上の表示が変わる。">
+<script type="text/plain">
+machine save initial saved
+state saved     # すべてディスクにある。
+state dirty     # 入力中。500ms 待つ。
+state saving    # 書き込みスレッドが書く。入力は次の回に回す。
+state failed    # 書けなかった。変更はメモリに残る。
+
+| dirty  | saving | failed |
+| saved  | .      | .      |
+
+saved  -edit->  dirty  : 入力
+dirty  -idle->  saving : 500ms
+saving -ok->    saved  : commit
+saving -error-> failed : error
+failed -retry-> saving : 5s
+</script>
+    <div data-state="saved"><doc-mock frame="none" w="360"><template><div class="ui"><div class="bar"><span>買い物リスト</span><span class="ok">保存済み</span></div></div></template></doc-mock></div>
+    <div data-state="dirty"><doc-mock frame="none" w="360"><template><div class="ui"><div class="bar"><span>買い物リスト</span><span class="dim">編集中</span></div></div></template></doc-mock></div>
+    <div data-state="saving"><doc-mock frame="none" w="360"><template><div class="ui"><div class="bar"><span>買い物リスト</span><span class="dim">保存中…</span></div></div></template></doc-mock></div>
+    <div data-state="failed"><doc-mock frame="none" w="360"><template><div class="ui"><div class="bar"><span>買い物リスト</span><span class="bad">保存できません · 再試行中</span></div></div></template></doc-mock></div>
+  </doc-machine>
+
+  <doc-claim>
+    <p>1本の書き込みスレッドが、500ms ごとに変更をまとめて書く。</p>
+    <doc-calls title="自動保存" caption="UI スレッドは DB を待たない。">
+<script type="text/plain">
++ **AutoSaver.changed**(block)                      @ src/main/java/app/dearnotes/save/AutoSaver.java:30   -- FX スレッド
++   pending.put(id, block); reschedule(500ms)       @ src/main/java/app/dearnotes/save/AutoSaver.java:34
++ **AutoSaver.flushNow**()                          @ src/main/java/app/dearnotes/save/AutoSaver.java:50   -- db-writer スレッド
++   **BlockRepo.upsertAll**(batch)                  @ src/main/java/app/dearnotes/db/BlockRepo.java:40     -- 1トランザクション
++   Platform.runLater(status = SAVED)               @ src/main/java/app/dearnotes/save/AutoSaver.java:58
+</script>
+    </doc-calls>
+    <doc-claim at="src/main/java/app/dearnotes/save/AutoSaver.java:50">
+      <p><b>AutoSaver.java:50</b> · flushNow()</p>
+      <doc-code title="save/AutoSaver.java · sketch" lang="java" start="50">
+<script type="text/plain">
+private void flushNow() {
+  Map<String, Block> batch = drainPending();
+  if (batch.isEmpty()) return;
+  setStatus(SaveStatus.SAVING);
+  try {
+    blocks.upsertAll(batch.values());
+    deletes.flush();
+    setStatus(pending.isEmpty() ? SaveStatus.SAVED : SaveStatus.DIRTY);
+  } catch (SQLException e) {
+    batch.forEach(pending::putIfAbsent);   // 新しい入力を上書きしない
+    setStatus(SaveStatus.FAILED);
+    writer.schedule(this::flushNow, 5, SECONDS);
+  }
+}
+</script>
+        <doc-pin line="59" tone="warn" title="失敗しても変更を捨てない"></doc-pin>
+      </doc-code>
+    </doc-claim>
+  </doc-claim>
+
+  <doc-claim>
+    <p>SQLite は WAL モードで開き、外部キーを有効にする。</p>
+    <doc-code title="db/Database.java · sketch" lang="java">
+<script type="text/plain">
+public static Connection open(Path file) throws SQLException {
+  var conn = DriverManager.getConnection("jdbc:sqlite:" + file);
+  try (var s = conn.createStatement()) {
+    s.execute("PRAGMA journal_mode = WAL");
+    s.execute("PRAGMA synchronous = NORMAL");
+    s.execute("PRAGMA foreign_keys = ON");
+    s.execute("PRAGMA busy_timeout = 5000");
+  }
+  Migrations.apply(conn);   // PRAGMA user_version で版を管理
+  return conn;
+}
+</script>
+      <doc-pin line="4" title="強制終了しても壊れにくい"></doc-pin>
+    </doc-code>
+  </doc-claim>
+
+  <doc-claim>
+    <p>ウィンドウを閉じると、未保存の変更を書いてから終わる。</p>
+    <doc-calls title="終了" caption="待つのは最大 3 秒。">
+<script type="text/plain">
++ **App.stop**()                                    @ src/main/java/app/dearnotes/App.java:45
++   **AutoSaver.close**()                           @ src/main/java/app/dearnotes/save/AutoSaver.java:70   -- flushNow を待つ
++   **Database.close**()                            @ src/main/java/app/dearnotes/db/Database.java:40      -- wal_checkpoint(TRUNCATE)
+</script>
+    </doc-calls>
+  </doc-claim>
+</doc-claim>
+
+<!-- ═════ 4 ═════ -->
+<doc-claim>
+  <p>Cmd/Ctrl+K で、日本語の語句から全ページを探せる。</p>
+  <doc-mock frame="none" w="440"><template>
+<div class="ui">
+  <div class="q">🔍 コーヒー<span class="cur"></span></div>
+  <div class="r"><b>買い物リスト</b><small>…<mark>コーヒー</mark>豆 200g…</small></div>
+  <div class="r"><b>2026-10-10</b><small>…駅前の店で<mark>コーヒー</mark>を飲んだ…</small></div>
+  <div class="r"><b><mark>コーヒー</mark>の淹れ方</b><small>タイトルに一致</small></div>
+</div></template>
+    <doc-pin at="96%,30%" title="↑↓ で選び Enter で開く"></doc-pin>
+  </doc-mock>
+
+  <doc-claim>
+    <p>FTS5 の trigram で、日本語の部分一致を探す。</p>
+    <doc-code title="resources/db/V1__init.sql · sketch" lang="sql">
+<script type="text/plain">
+CREATE VIRTUAL TABLE blocks_fts USING fts5(
+  text, content = 'blocks', content_rowid = 'rowid',
+  tokenize = 'trigram'
+);
+CREATE TRIGGER blocks_ai AFTER INSERT ON blocks BEGIN
+  INSERT INTO blocks_fts(rowid, text) VALUES (new.rowid, new.text);
+END;
+CREATE TRIGGER blocks_ad AFTER DELETE ON blocks BEGIN
+  INSERT INTO blocks_fts(blocks_fts, rowid, text) VALUES ('delete', old.rowid, old.text);
+END;
+CREATE TRIGGER blocks_au AFTER UPDATE OF text ON blocks BEGIN
+  INSERT INTO blocks_fts(blocks_fts, rowid, text) VALUES ('delete', old.rowid, old.text);
+  INSERT INTO blocks_fts(rowid, text) VALUES (new.rowid, new.text);
+END;
+</script>
+      <doc-pin line="3" title="分かち書きが要らない">unicode61 は日本語を語に分けられない。</doc-pin>
+    </doc-code>
+  </doc-claim>
+
+  <doc-claim>
+    <p>2文字以下の語は trigram で探せないので LIKE を使う。</p>
+    <doc-code title="db/SearchRepo.java · sketch" lang="java">
+<script type="text/plain">
+public List<Hit> search(String q) throws SQLException {
+  q = q.strip();
+  if (q.isEmpty()) return List.of();
+  return q.codePointCount(0, q.length()) >= 3
+      ? ftsSearch("\"" + q.replace("\"", "\"\"") + "\"")   // MATCH 用に引用
+      : likeSearch("%" + escapeLike(q) + "%");
+}
+// どちらもタイトルの LIKE と UNION し、ゴミ箱を除き、20件まで返す
+</script>
+    </doc-code>
+  </doc-claim>
+</doc-claim>
+
+<!-- ═════ 5 ═════ -->
+<doc-claim>
+  <p>ユーザーは Mac で .dmg、Windows で .msi から入れる。</p>
+  <doc-mock frame="terminal" title="DearNotes — gradle" w="480"><template><span class="dim">$</span> ./gradlew jpackage
+<span class="dim">> Task :jar</span>
+<span class="dim">> Task :jlinkRuntime</span>   <span class="g">runtime 48 MB</span>
+<span class="dim">> Task :jpackage</span>
+<span class="g">✓</span> build/jpackage/<b>DearNotes-1.0.0.dmg</b>    <span class="dim">(macOS)</span>
+<span class="g">✓</span> build/jpackage/<b>DearNotes-1.0.0.msi</b>    <span class="dim">(Windows)</span>
+
+<span class="g">BUILD SUCCESSFUL</span> in 41s</template></doc-mock>
+  <doc-ask id="sign">
+    <p>インストーラーに署名しますか？</p>
+    <label><input type="radio" name="sign" value="none" checked> v1 では署名しない <small>初回だけ OS の警告を手で許可する</small></label>
+    <label><input type="radio" name="sign" value="mac"> Mac だけ署名と公証をする <small>Apple Developer Program が要る</small></label>
+    <label><input type="radio" name="sign" value="both"> Mac と Windows の両方 <small>Windows のコード署名証明書も要る</small></label>
+  </doc-ask>
+  <div data-if="sign=none"><doc-note tone="warn">macOS 15 以降は右クリックで開けない。「システム設定 › プライバシーとセキュリティ」で許可する。README に手順を書く。</doc-note></div>
+
+  <doc-claim>
+    <p>Gradle が jlink で小さい JRE を作り、jpackage で包む。</p>
+    <doc-code title="build.gradle.kts · sketch" lang="kotlin">
+<script type="text/plain">
+java { toolchain { languageVersion = JavaLanguageVersion.of(25) } }
+
+val jlinkRuntime by tasks.registering(Exec::class) {
+  commandLine("jlink",
+    "--add-modules", "java.sql,java.desktop,jdk.unsupported,javafx.controls",
+    "--strip-debug", "--no-header-files", "--no-man-pages",
+    "--output", "build/runtime")
+}
+
+val jpackage by tasks.registering(Exec::class) {
+  dependsOn(tasks.jar, jlinkRuntime, "copyLibs")
+  val mac = OperatingSystem.current().isMacOsX
+  commandLine(buildList {
+    addAll(listOf("jpackage", "--name", "DearNotes", "--app-version", version,
+      "--input", "build/libs", "--main-jar", "dearnotes.jar",
+      "--main-class", "app.dearnotes.Launcher",
+      "--runtime-image", "build/runtime", "--dest", "build/jpackage",
+      "--java-options", "--enable-native-access=ALL-UNNAMED,javafx.graphics"))
+    if (mac) addAll(listOf("--type", "dmg", "--mac-package-identifier", "app.dearnotes",
+      "--icon", "packaging/mac/DearNotes.icns"))
+    else addAll(listOf("--type", "msi", "--win-menu", "--win-shortcut",
+      "--win-per-user-install", "--win-upgrade-uuid", UPGRADE_UUID,
+      "--icon", "packaging/win/DearNotes.ico"))
+  })
+}
+</script>
+      <doc-pin line="5" title="javafx.controls も jlink に入れる">JavaFX 入りの JDK が要る。</doc-pin>
+      <doc-pin line="20" tone="warn" title="JNI の警告を消す">sqlite-jdbc と JavaFX はネイティブを読む。</doc-pin>
+      <doc-pin line="24" title="固定の UUID">新しい版が古い版を置き換える。</doc-pin>
+    </doc-code>
+    <doc-ask id="build">
+      <p>ビルドツールはどちらにしますか？</p>
+      <div class="opts-row">
+        <label><input type="radio" name="build" value="gradle" checked> Gradle (Kotlin DSL)</label>
+        <label><input type="radio" name="build" value="maven"> Maven</label>
+      </div>
+    </doc-ask>
+    <doc-note tone="info">開発機と CI は BellSoft Liberica Full JDK 25 を使う。JavaFX の jmods が最初から入っている。</doc-note>
+  </doc-claim>
+
+  <doc-claim>
+    <p>jpackage は他の OS 向けに作れないので、CI が各 OS で作る。</p>
+    <doc-code title=".github/workflows/package.yml · sketch" lang="yaml">
+<script type="text/plain">
+on: { push: { tags: ['v*'] } }
+jobs:
+  package:
+    strategy:
+      matrix:
+        os: [macos-latest, macos-15-intel, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: { distribution: liberica, java-version: '25', java-package: jdk+fx }
+      - run: ./gradlew test jpackage
+        shell: bash
+      - uses: actions/upload-artifact@v4
+        with: { name: 'DearNotes-${{ matrix.os }}', path: build/jpackage/* }
+</script>
+      <doc-pin line="6" title="Apple シリコン、Intel Mac、Windows"></doc-pin>
+    </doc-code>
+  </doc-claim>
+
+  <doc-claim>
+    <p>データは OS のユーザーフォルダに置くので、更新しても消えない。</p>
+    <doc-code title="AppPaths.java · sketch" lang="java">
+<script type="text/plain">
+static Path dataDir() throws IOException {
+  String os = System.getProperty("os.name").toLowerCase(Locale.ROOT);
+  Path dir = switch (os) {
+    case String s when s.startsWith("mac") ->
+        Path.of(System.getProperty("user.home"), "Library", "Application Support", "DearNotes");
+    case String s when s.startsWith("windows") ->
+        Path.of(System.getenv("APPDATA"), "DearNotes");
+    default ->
+        Path.of(System.getProperty("user.home"), ".local", "share", "DearNotes");
+  };
+  return Files.createDirectories(dir);   // dearnotes.db はこの下
+}
+</script>
+    </doc-code>
+  </doc-claim>
+</doc-claim>
+
+<!-- ═════ shared · not changing ═════ -->
+<doc-claim aux="shared">
+  <p>共有: pages と blocks の2つのテーブル。</p>
+  <doc-schema id="schema" lang="sql" title="src/main/resources/db/V1__init.sql" caption="時刻は UTC のエポックミリ秒。">
+<script type="text/plain">
+CREATE TABLE pages (
+  id          TEXT PRIMARY KEY,                 -- UUID v7
+  parent_id   TEXT REFERENCES pages(id) ON DELETE CASCADE,
+  title       TEXT NOT NULL DEFAULT '',
+  icon        TEXT,                             -- 絵文字1つ
+  daily_date  TEXT UNIQUE,                      -- 'YYYY-MM-DD'。日記だけ
+  sort_key    REAL NOT NULL,
+  created_at  INTEGER NOT NULL,
+  updated_at  INTEGER NOT NULL,
+  deleted_at  INTEGER                           -- NULL 以外はゴミ箱
+);
+
+CREATE TABLE blocks (
+  id          TEXT PRIMARY KEY,
+  page_id     TEXT NOT NULL REFERENCES pages(id) ON DELETE CASCADE,
+  type        TEXT NOT NULL CHECK (type IN ('paragraph','h1','h2','h3',
+                'bullet','numbered','todo','quote','code','divider')),
+  text        TEXT NOT NULL DEFAULT '',
+  marks       TEXT,                             -- JSON: [[start,end,"bold"],…]
+  checked     INTEGER NOT NULL DEFAULT 0,
+  indent      INTEGER NOT NULL DEFAULT 0,
+  sort_key    REAL NOT NULL,
+  updated_at  INTEGER NOT NULL
+);
+CREATE INDEX blocks_by_page ON blocks (page_id, sort_key);
+-- blocks_fts は claim 4.1
+</script>
+  </doc-schema>
+  <doc-ask id="storage">
+    <p>ページの本文はどう保存しますか？</p>
+    <label><input type="radio" name="storage" value="rows" checked> 1ブロック = 1行 <small>変わったブロックだけ書く。並べ替えが安い</small></label>
+    <label><input type="radio" name="storage" value="markdown"> 1ページ = 1つの Markdown 文字列 <small>blocks がなくなる。claim 1.4 が消える</small></label>
+  </doc-ask>
+</doc-claim>
+
+<doc-claim aux="scope">
+  <p>v1 に入れないもの: 同期、画像、共有、Linux 版。</p>
+  <ul>
+    <li>クラウド同期と複数端末。DB は1台の1ファイルだけ。</li>
+    <li>画像とファイルの添付。テキストのブロックだけ。</li>
+    <li>他の人との共有、コメント、権限。</li>
+    <li>表、カンバン、データベース型のページ。</li>
+    <li>自動アップデート。新しい版はインストーラーで上書きする。</li>
+    <li>Linux 向けパッケージ。コードは動くが、配布物は作らない。</li>
+  </ul>
+</doc-claim>
+
+</doc-plan>
+</main>
+</body>
+</html>

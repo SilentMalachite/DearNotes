@@ -1,0 +1,7 @@
+.gradle/
+build/
+.idea/
+*.iml
+.DS_Store
+.playwright-mcp/
+.claude/scheduled_tasks.lock

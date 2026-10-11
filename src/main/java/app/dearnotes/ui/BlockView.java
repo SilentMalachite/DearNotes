@@ -1,0 +1,389 @@
+package app.dearnotes.ui;
+
+import app.dearnotes.editor.MarkdownShortcuts;
+import app.dearnotes.editor.SlashCommands;
+import app.dearnotes.model.Block;
+import app.dearnotes.model.BlockType;
+import app.dearnotes.model.Mark;
+import java.util.List;
+import java.util.Optional;
+import javafx.application.Platform;
+import javafx.geometry.Bounds;
+import javafx.geometry.Pos;
+import javafx.scene.control.CheckBox;
+import javafx.scene.control.Label;
+import javafx.scene.control.Separator;
+import javafx.scene.input.Clipboard;
+import javafx.scene.input.KeyCode;
+import javafx.scene.input.KeyEvent;
+import javafx.scene.input.MouseEvent;
+import javafx.scene.input.ScrollEvent;
+import javafx.scene.layout.HBox;
+import javafx.scene.layout.Priority;
+import javafx.scene.layout.Region;
+import javafx.scene.layout.StackPane;
+import org.fxmisc.richtext.StyleClassedTextArea;
+
+/** ブロック1つ分の行。左からハンドル、記号（点・番号・チェック）、本文。 */
+final class BlockView extends HBox {
+
+    static final double INDENT_WIDTH = 24;
+
+    /** キー操作の結果を PageEditor に渡す。 */
+    interface Host {
+        void edited(BlockView v);
+        void enter(BlockView v);
+        void backspaceAtStart(BlockView v);
+        void deleteAtEnd(BlockView v);
+        void indent(BlockView v, int delta);
+        void focusPrevious(BlockView v);
+        void focusNext(BlockView v);
+        void moveBy(BlockView v, int delta);
+        void convert(BlockView v, BlockType type, int prefixLength);
+        void slashQuery(BlockView v, String query);
+        boolean slashKey(BlockView v, KeyEvent e);
+        void pasteLines(BlockView v, String text);
+        void scroll(double deltaY);
+        void focused(BlockView v);
+        void openLink(String url);
+        void dragStarted(BlockView v, MouseEvent e);
+    }
+
+    private final Host host;
+    private final StyleClassedTextArea area = new StyleClassedTextArea();
+    private final Label handle = new Label("⋮⋮");
+    private final Region indentSpacer = new Region();
+    private final StackPane gutter = new StackPane();
+    private final Label bullet = new Label();
+    private final CheckBox check = new CheckBox();
+    private final Separator divider = new Separator();
+    private final StackPane content = new StackPane();
+    private final Label placeholder = new Label();
+    private Block block;
+    private boolean loading;
+    private boolean composing;
+
+    BlockView(Block block, Host host) {
+        this.block = block;
+        this.host = host;
+        getStyleClass().add("block");
+        setAlignment(Pos.TOP_LEFT);
+
+        handle.getStyleClass().add("block-handle");
+        handle.setOnDragDetected(e -> host.dragStarted(this, e));
+
+        gutter.getStyleClass().add("block-gutter");
+        bullet.getStyleClass().add("block-bullet");
+        check.setFocusTraversable(false);
+        check.setOnAction(e -> {
+            this.block = this.block.withChecked(check.isSelected());
+            pseudoUpdate();
+            host.edited(this);
+        });
+        gutter.getChildren().addAll(bullet, check);
+
+        area.getStyleClass().add("block-text");
+        area.setWrapText(true);
+        area.setAutoHeight(true);
+        area.setPlaceholder(placeholder);
+        placeholder.getStyleClass().add("block-placeholder");
+        placeholder.setMouseTransparent(true);
+        divider.getStyleClass().add("block-divider");
+        divider.setMouseTransparent(true);
+        content.getStyleClass().add("block-content");
+        content.getChildren().addAll(area, divider);
+        HBox.setHgrow(content, Priority.ALWAYS);
+        content.setMaxWidth(Double.MAX_VALUE);
+
+        getChildren().addAll(handle, indentSpacer, gutter, content);
+
+        area.multiRichChanges().subscribe(changes -> {
+            if (!loading) onEdited();
+        });
+        area.plainTextChanges().subscribe(ch -> {
+            // 日本語入力では「＃　」がまとめて確定されることもあるので、短い入力なら調べる
+            int n = ch.getInserted().length();
+            if (!loading && n >= 1 && n <= 4) Platform.runLater(this::detectShortcut);
+        });
+        area.focusedProperty().addListener((obs, was, now) -> {
+            updatePlaceholder();
+            if (now) host.focused(this);
+            else host.slashQuery(this, null);
+        });
+        // 日本語入力で変換中の文字があるあいだは、ショートカットも Enter も IME に任せる
+        area.addEventFilter(javafx.scene.input.InputMethodEvent.INPUT_METHOD_TEXT_CHANGED,
+            e -> composing = !e.getComposed().isEmpty());
+        area.addEventFilter(KeyEvent.KEY_PRESSED, this::onKeyPressed);
+        area.addEventFilter(ScrollEvent.SCROLL, e -> {
+            e.consume();
+            host.scroll(e.getDeltaY());
+        });
+        area.addEventFilter(MouseEvent.MOUSE_CLICKED, this::onClicked);
+
+        load();
+    }
+
+    Block block() {
+        return block;
+    }
+
+    StyleClassedTextArea area() {
+        return area;
+    }
+
+    int caret() {
+        return area.getCaretPosition();
+    }
+
+    String text() {
+        return area.getText();
+    }
+
+    /** 種類や字下げなど、本文以外が変わったブロックを受け取る。 */
+    void setBlock(Block b) {
+        boolean contentChanged = !b.text().equals(area.getText()) || !b.marks().equals(StyledText.read(area));
+        boolean typeChanged = b.type() != block.type();
+        block = b;
+        if (contentChanged) {
+            load();
+        } else if (typeChanged) {
+            applyType();
+        } else {
+            applyIndent();
+            pseudoUpdate();
+        }
+    }
+
+    /** 本文を差し替える（分割・結合のとき）。 */
+    void setContent(String text, List<Mark> marks) {
+        block = block.withContent(text, marks);
+        load();
+    }
+
+    void setListNumber(int n) {
+        if (block.type() == BlockType.NUMBERED) bullet.setText(n + ".");
+    }
+
+    void focusAt(int position) {
+        area.requestFocus();
+        area.moveTo(Math.clamp(position, 0, area.getLength()));
+        area.requestFollowCaret();
+    }
+
+    void focusEnd() {
+        focusAt(area.getLength());
+    }
+
+    Optional<Bounds> caretBounds() {
+        return area.getCaretBounds();
+    }
+
+    void setDropHint(String hint) {
+        getStyleClass().removeAll("drop-above", "drop-below");
+        if (hint != null) getStyleClass().add(hint);
+    }
+
+    // ---- 内部 ----
+
+    private void load() {
+        loading = true;
+        try {
+            StyledText.load(area, block.text(), block.type() == BlockType.CODE ? List.of() : block.marks());
+            area.getUndoManager().forgetHistory();
+        } finally {
+            loading = false;
+        }
+        applyType();
+    }
+
+    private void applyType() {
+        BlockType t = block.type();
+        for (BlockType other : BlockType.values()) getStyleClass().remove(other.dbName());
+        getStyleClass().add(t.dbName());
+
+        bullet.setVisible(t == BlockType.BULLET || t == BlockType.NUMBERED);
+        check.setVisible(t == BlockType.TODO);
+        check.setSelected(block.checked());
+        gutter.setManaged(t.isList());
+        gutter.setVisible(t.isList());
+        if (t == BlockType.BULLET) bullet.setText(block.indent() % 2 == 0 ? "•" : "◦");
+
+        boolean isDivider = t == BlockType.DIVIDER;
+        divider.setVisible(isDivider);
+        area.setEditable(!isDivider);
+        area.setOpacity(isDivider ? 0 : 1);
+        placeholder.setText(switch (t) {
+            case H1, H2, H3 -> t.label();
+            case TODO -> "ToDo";
+            case BULLET, NUMBERED -> "リスト";
+            case QUOTE -> "引用";
+            case CODE -> "コード";
+            case DIVIDER -> "";
+            case PARAGRAPH -> "「/」でコマンド";
+        });
+        applyIndent();
+        pseudoUpdate();
+        updatePlaceholder();
+    }
+
+    private void applyIndent() {
+        // CSS の padding に上書きされないよう、字下げは専用の余白で付ける
+        double w = block.indent() * INDENT_WIDTH;
+        indentSpacer.setMinWidth(w);
+        indentSpacer.setPrefWidth(w);
+        indentSpacer.setMaxWidth(w);
+        if (block.type() == BlockType.BULLET) bullet.setText(block.indent() % 2 == 0 ? "•" : "◦");
+    }
+
+    private void pseudoUpdate() {
+        getStyleClass().remove("checked");
+        if (block.type() == BlockType.TODO && block.checked()) getStyleClass().add("checked");
+    }
+
+    private void updatePlaceholder() {
+        boolean heading = switch (block.type()) {
+            case H1, H2, H3 -> true;
+            default -> false;
+        };
+        placeholder.setVisible(heading || area.isFocused());
+    }
+
+    private void onEdited() {
+        String text = area.getText();
+        List<Mark> marks = block.type() == BlockType.CODE ? List.of() : StyledText.read(area);
+        if (text.equals(block.text()) && marks.equals(block.marks())) return;
+        block = block.withContent(text, marks);
+        host.edited(this);
+        host.slashQuery(this, SlashCommands.queryOf(text));
+    }
+
+    /** 行頭に「# 」などを打ったら、その種類に変える。 */
+    private void detectShortcut() {
+        if (block.type() != BlockType.PARAGRAPH || composing) return;
+        MarkdownShortcuts.detect(area.getText(), area.getCaretPosition())
+            .ifPresent(hit -> host.convert(this, hit.type(), hit.prefixLength()));
+    }
+
+    private void onKeyPressed(KeyEvent e) {
+        if (composing) return;
+        if (host.slashKey(this, e)) {
+            e.consume();
+            return;
+        }
+        boolean shortcut = e.isShortcutDown();
+        boolean noSelection = area.getSelection().getLength() == 0;
+        int caret = area.getCaretPosition();
+        int length = area.getLength();
+
+        if (shortcut && !e.isAltDown()) {
+            Mark.Style style = switch (e.getCode()) {
+                case B -> e.isShiftDown() ? null : Mark.Style.BOLD;
+                case I -> e.isShiftDown() ? null : Mark.Style.ITALIC;
+                case E -> e.isShiftDown() ? null : Mark.Style.CODE;
+                case S -> e.isShiftDown() ? Mark.Style.STRIKE : null;
+                case L -> e.isShiftDown() ? Mark.Style.LINK : null;
+                default -> null;
+            };
+            if (style != null && block.type() != BlockType.CODE) {
+                StyledText.toggle(area, style);
+                e.consume();
+                return;
+            }
+            if (e.isShiftDown() && (e.getCode() == KeyCode.UP || e.getCode() == KeyCode.DOWN)) {
+                host.moveBy(this, e.getCode() == KeyCode.UP ? -1 : 1);
+                e.consume();
+                return;
+            }
+            if (e.getCode() == KeyCode.V && !e.isShiftDown()) {
+                String clip = Clipboard.getSystemClipboard().getString();
+                if (clip != null && clip.contains("\n") && block.type() != BlockType.CODE) {
+                    host.pasteLines(this, clip);
+                    e.consume();
+                }
+                return;
+            }
+            return;
+        }
+
+        switch (e.getCode()) {
+            case ENTER -> {
+                if (e.isShiftDown()) {
+                    area.replaceSelection("\n");
+                } else if (block.type() == BlockType.CODE && !(caret == length && area.getText().endsWith("\n"))) {
+                    area.replaceSelection("\n");
+                } else {
+                    if (block.type() == BlockType.CODE) area.deleteText(length - 1, length);
+                    // 選んだ文字があれば、消してから分ける
+                    if (!noSelection) area.replaceSelection("");
+                    host.enter(this);
+                }
+                e.consume();
+            }
+            case BACK_SPACE -> {
+                if (noSelection && caret == 0) {
+                    host.backspaceAtStart(this);
+                    e.consume();
+                }
+            }
+            case DELETE -> {
+                if (noSelection && caret == length) {
+                    host.deleteAtEnd(this);
+                    e.consume();
+                }
+            }
+            case TAB -> {
+                host.indent(this, e.isShiftDown() ? -1 : 1);
+                e.consume();
+            }
+            case UP -> {
+                if (onFirstLine()) {
+                    host.focusPrevious(this);
+                    e.consume();
+                }
+            }
+            case DOWN -> {
+                if (onLastLine()) {
+                    host.focusNext(this);
+                    e.consume();
+                }
+            }
+            case LEFT -> {
+                if (noSelection && caret == 0 && !e.isShiftDown()) {
+                    host.focusPrevious(this);
+                    e.consume();
+                }
+            }
+            case RIGHT -> {
+                if (noSelection && caret == length && !e.isShiftDown()) {
+                    host.focusNext(this);
+                    e.consume();
+                }
+            }
+            default -> { }
+        }
+    }
+
+    private boolean onFirstLine() {
+        if (area.getCurrentParagraph() != 0) return false;
+        return area.lineIndex(0, area.getCaretColumn()) == 0;
+    }
+
+    private boolean onLastLine() {
+        int last = area.getParagraphs().size() - 1;
+        if (area.getCurrentParagraph() != last) return false;
+        return area.lineIndex(last, area.getCaretColumn()) == area.getParagraphLinesCount(last) - 1;
+    }
+
+    /** Cmd/Ctrl を押しながらリンクを押すと開く。 */
+    private void onClicked(MouseEvent e) {
+        if (!e.isShortcutDown()) return;
+        int at = area.hit(e.getX(), e.getY()).getInsertionIndex();
+        for (Mark m : block.marks()) {
+            if (m.style() == Mark.Style.LINK && m.start() <= at && at <= m.end()) {
+                host.openLink(block.text().substring(m.start(), m.end()).strip());
+                e.consume();
+                return;
+            }
+        }
+    }
+}
