@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-10-11
+
 ### 追加
 
 - アプリのアイコン: macOS（.icns）と Windows（.ico）のインストーラー、Windows のウィンドウとタスクバーに付ける
@@ -51,7 +53,8 @@
 - 入力が 500ms 止まったら1本の書き込みスレッドで保存する自動保存と、終了時の書き出し
 - jlink と jpackage による macOS（.dmg）と Windows（.msi）のインストーラー
 
-[Unreleased]: https://github.com/SilentMalachite/DearNotes/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/SilentMalachite/DearNotes/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/SilentMalachite/DearNotes/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/SilentMalachite/DearNotes/compare/v1.0.1...v1.1.0
 [1.0.1]: https://github.com/SilentMalachite/DearNotes/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/SilentMalachite/DearNotes/releases/tag/v1.0.0
