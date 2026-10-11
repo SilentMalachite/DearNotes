@@ -40,7 +40,7 @@ JDK 25 が要ります。JavaFX は Gradle が取ってくるので、JavaFX 入
 ./gradlew jpackage
 ```
 
-`build/jpackage/` に、macOS では `DearNotes-1.0.0.dmg`、Windows では `DearNotes-1.0.0.msi` ができます。jlink で必要なモジュールだけの JRE を作って同梱するので、利用者の PC に Java は要りません。
+`build/jpackage/` に、macOS では `DearNotes-1.0.1.dmg`、Windows では `DearNotes-1.0.1.msi` ができます。jlink で必要なモジュールだけの JRE を作って同梱するので、利用者の PC に Java は要りません。
 
 - jpackage は他の OS 向けには作れません。各 OS で実行してください
 - Windows では WiX Toolset が要ります（`dotnet tool install --global wix`）
