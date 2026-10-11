@@ -119,6 +119,13 @@ class InlineTest {
     }
 
     @Test
+    void urlLinkOverTwoPageLinksKeepsBothPageLinks() {
+        var marks = List.of(new Mark(0, 4, LINK), new Mark(0, 2, PAGE, "k"), new Mark(2, 4, PAGE, "o"));
+        assertEquals("[京都](京都.md)[大阪](大阪.md)",
+            Inline.write("京都大阪", marks, id -> id.equals("k") ? "京都.md" : "大阪.md"));
+    }
+
+    @Test
     void pageLinkPathIsEncoded() {
         assertEquals("[a\\*b](a%20%28b%29%20%2325%25.md)",
             Inline.write("a*b", List.of(new Mark(0, 3, PAGE, "k")), id -> "a (b) #25%.md"));

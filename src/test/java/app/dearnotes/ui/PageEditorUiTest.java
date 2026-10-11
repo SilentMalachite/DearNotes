@@ -285,6 +285,23 @@ class PageEditorUiTest {
     }
 
     @Test
+    void shortcutTypedBeforePageLinkKeepsTheWholeLink() throws Exception {
+        var p = pages.create(null, "リンク");
+        blocks.save(List.of(Block.empty(p.id(), BlockType.PARAGRAPH, 1024)
+            .withContent("京都", List.of(new Mark(0, 2, Mark.Style.PAGE, "x")))), List.of());
+        reopen(p.id());
+        fx(() -> {
+            window.editor().views().getFirst().focusAt(0);
+            return null;
+        });
+        settle();
+        type("# ");
+        assertEquals(BlockType.H1, fx(() -> current().block().type()));
+        assertEquals("京都", fx(() -> current().block().text()));
+        assertEquals(List.of(new Mark(0, 2, Mark.Style.PAGE, "x")), fx(() -> current().block().marks()));
+    }
+
+    @Test
     void typingAtTheStartOfPageLinkIsNotLinked() throws Exception {
         var p = pages.create(null, "リンク");
         blocks.save(List.of(Block.empty(p.id(), BlockType.PARAGRAPH, 1024)

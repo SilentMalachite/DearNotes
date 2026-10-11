@@ -22,6 +22,12 @@ class MarksTest {
     }
 
     @Test
+    void linkAtPrefersPageLinkOverUrlLink() {
+        var page = new Mark(0, 2, PAGE, "k");
+        assertEquals(Optional.of(page), Marks.linkAt(Marks.normalize(List.of(new Mark(0, 2, LINK), page)), 0));
+    }
+
+    @Test
     void sliceClipsAndShifts() {
         var marks = List.of(new Mark(0, 4, BOLD), new Mark(6, 10, ITALIC));
         assertEquals(List.of(new Mark(0, 1, BOLD)), Marks.slice(marks, 3, 5));

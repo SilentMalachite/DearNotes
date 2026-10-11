@@ -11,6 +11,7 @@ import java.util.EnumSet;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.regex.Pattern;
@@ -249,11 +250,15 @@ final class Inline {
         return null;
     }
 
-    /** 2つの切れ目が、同じコードかリンクの装飾の中にあるか。 */
+    /**
+     * 2つの切れ目が、同じコードかリンクの装飾の中にあるか。
+     * リンクは、行き先のページが変わるところで切る（URL のリンクが別々のページへのリンクを覆っていても繋げない）。
+     */
     private static boolean sameAtom(Segment a, Segment b, List<Mark> marks) {
+        boolean sameTarget = Objects.equals(targetOver(marks, a), targetOver(marks, b));
         for (Mark m : marks) {
             if (!atom(m.style())) continue;
-            if (m.start() <= a.start() && b.end() <= m.end()) return true;
+            if (m.start() <= a.start() && b.end() <= m.end() && (m.style() == Style.CODE || sameTarget)) return true;
         }
         return false;
     }

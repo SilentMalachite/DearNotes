@@ -126,11 +126,12 @@ final class BlockView extends HBox {
         area.plainTextChanges().subscribe(ch -> {
             // 日本語入力では「＃　」がまとめて確定されることもあるので、短い入力なら調べる
             int n = ch.getInserted().length();
-            if (!loading && n >= 1 && n <= 4) Platform.runLater(this::detectShortcut);
-            // 元に戻すときは、消す前の装飾ごと戻すので触らない
+            // 元に戻すときは、消す前の装飾ごと戻すので触らない。
+            // 記号の変換は行頭を消して位置がずれるので、リンクの印を外してから調べる
             if (!loading && !linking && n >= 1 && !area.getUndoManager().isPerformingAction()) {
                 Platform.runLater(() -> unlink(ch.getPosition(), n));
             }
+            if (!loading && n >= 1 && n <= 4) Platform.runLater(this::detectShortcut);
         });
         // ←→ やクリックでカーソルが「[[」から離れたら、ページの候補を閉じる
         area.caretPositionProperty().addListener((obs, old, now) -> {

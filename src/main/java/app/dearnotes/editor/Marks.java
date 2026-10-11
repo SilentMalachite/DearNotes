@@ -23,12 +23,15 @@ public final class Marks {
         return normalize(out);
     }
 
-    /** index の文字にかかるリンク（ページへのリンクも）。隣り合うリンクを取り違えないよう、end の文字は含めない。 */
+    /**
+     * index の文字にかかるリンク。隣り合うリンクを取り違えないよう、end の文字は含めない。
+     * ページへのリンクと URL のリンクが重なっていれば、書き出しと同じくページへのリンクを選ぶ。
+     */
     public static Optional<Mark> linkAt(List<Mark> marks, int index) {
         return marks.stream()
             .filter(m -> m.style() == Mark.Style.PAGE || m.style() == Mark.Style.LINK)
             .filter(m -> m.start() <= index && index < m.end())
-            .findFirst();
+            .min(Comparator.comparing(m -> m.style() == Mark.Style.PAGE ? 0 : 1));
     }
 
     /** a の後ろに長さ aLength の文字列が続くとして、b をずらして繋げる。 */

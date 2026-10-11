@@ -444,10 +444,14 @@ final class PageEditor extends VBox implements BlockView.Host {
             PageLinks.queryAt(v.text(), v.caret()).ifPresentOrElse(q -> {
                 if (links.dismissed(v, q.from())) return;
                 String name = q.text().strip();
+                // 探せなかったときに「新しく作る」を出すと、同じ名前のページを作ってしまう
+                var found = Errors.get("ページを探す", () -> s.pages().findByTitle(name, 8));
+                if (found.isEmpty()) {
+                    links.close(v);
+                    return;
+                }
                 var items = new ArrayList<PageLinkMenu.Choice>();
-                Errors.get("ページを探す", () -> s.pages().findByTitle(name, 8)).ifPresent(found -> {
-                    for (Page p : found) items.add(new PageLinkMenu.Choice(p, p.displayTitle()));
-                });
+                for (Page p : found.get()) items.add(new PageLinkMenu.Choice(p, p.displayTitle()));
                 boolean exact = items.stream().anyMatch(c -> c.page().title().equals(name));
                 if (!name.isEmpty() && !exact) items.add(new PageLinkMenu.Choice(null, name));
                 links.show(v, q.from(), items);
