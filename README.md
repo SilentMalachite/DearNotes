@@ -83,3 +83,14 @@ src/main/java/app/dearnotes
 ## v1 に入れないもの
 
 クラウド同期と複数端末、画像やファイルの添付、共有とコメント、表やデータベース型のページ、自動アップデート、Linux 向けパッケージ。
+
+## ドキュメント
+
+- [CHANGELOG.md](CHANGELOG.md): 版ごとの変更
+- [CONTRIBUTING.md](CONTRIBUTING.md): 不具合の報告、開発の準備、変更の送り方
+- [SECURITY.md](SECURITY.md): 脆弱性の報告方法
+- [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md): インストーラーに入っているソフトウェアのライセンス
+
+## ライセンス
+
+[Apache License 2.0](LICENSE) です。インストーラーに同梱している JRE、JavaFX、RichTextFX などは、それぞれのライセンスに従います（[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)）。
