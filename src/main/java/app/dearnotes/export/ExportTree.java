@@ -4,8 +4,10 @@ import app.dearnotes.model.Block;
 import app.dearnotes.model.Page;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
 import java.sql.SQLException;
 import java.text.Normalizer;
@@ -57,13 +59,15 @@ public final class ExportTree {
     /** ページ名をファイル名にする。拡張子は付けない。 */
     public static String fileName(Page p) {
         String name = BAD.matcher(p.displayTitle()).replaceAll("_").strip();
-        name = name.replaceAll("[. ]+$", "");           // Windows は末尾の . と空白を消す
-        if (name.startsWith(".")) name = "_" + name.substring(1);   // 隠しファイルにしない
-        if (name.isEmpty() || RESERVED.contains(name.toUpperCase(Locale.ROOT))) name = "_" + name;
         // パスの長さの上限を越えないよう切る。文字の途中では切らない
         if (name.codePointCount(0, name.length()) > MAX_NAME) {
             name = name.substring(0, name.offsetByCodePoints(0, MAX_NAME));
         }
+        name = name.replaceAll("[. ]+$", "");           // Windows は末尾の . と空白を消す（切った後にも）
+        if (name.startsWith(".")) name = "_" + name.substring(1);   // 隠しファイルにしない
+        // Windows は「CON.txt」のように拡張子が付いても予約名と見る
+        String stem = name.split("\\.", 2)[0].strip();
+        if (name.isEmpty() || RESERVED.contains(stem.toUpperCase(Locale.ROOT))) name = "_" + name;
         return name;
     }
 
@@ -114,12 +118,36 @@ public final class ExportTree {
         written.add(file);
     }
 
-    /** used にない名前。「京都」→「京都 (2)」。 */
+    /**
+     * used にない名前。「京都」→「京都 (2)」。
+     * ページは「名前.md」と、子があれば「名前」のフォルダを使うので、両方を取っておく。
+     */
     static String unique(Set<String> used, String name) {
         String candidate = name;
-        for (int n = 2; used.contains(key(candidate)); n++) candidate = name + " (" + n + ")";
+        for (int n = 2; used.contains(key(candidate)) || used.contains(key(candidate + ".md")); n++) {
+            candidate = name + " (" + n + ")";
+        }
         used.add(key(candidate));
+        used.add(key(candidate + ".md"));
         return candidate;
+    }
+
+    /**
+     * file に text を書く。同じフォルダの一時ファイルに書いてから置き換えるので、
+     * 途中で失敗しても前のファイルは残る。
+     */
+    public static void writeReplacing(Path file, String text) throws IOException {
+        Path tmp = Files.createTempFile(file.toAbsolutePath().getParent(), ".dearnotes-", ".tmp");
+        try {
+            Files.writeString(tmp, text, StandardCharsets.UTF_8);
+            try {
+                Files.move(tmp, file, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+            } catch (AtomicMoveNotSupportedException e) {
+                Files.move(tmp, file, StandardCopyOption.REPLACE_EXISTING);
+            }
+        } finally {
+            Files.deleteIfExists(tmp);
+        }
     }
 
     /** 大文字と小文字、濁点の表し方の違いは同じ名前と見る（macOS と Windows に合わせる）。 */

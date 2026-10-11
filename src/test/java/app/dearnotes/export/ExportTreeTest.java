@@ -44,6 +44,9 @@ class ExportTreeTest {
         assertEquals("メモ", ExportTree.fileName(titled("メモ. . ")));
         assertEquals("_", ExportTree.fileName(titled("..")));
         assertEquals("_bashrc", ExportTree.fileName(titled(".bashrc")));
+        assertEquals("_CON.txt", ExportTree.fileName(titled("CON.txt")));
+        assertEquals("_nul.tar.gz", ExportTree.fileName(titled("nul.tar.gz")));
+        assertEquals("CONSOLE", ExportTree.fileName(titled("CONSOLE")));
     }
 
     @Test
@@ -56,6 +59,50 @@ class ExportTreeTest {
         String name = ExportTree.fileName(titled("😀".repeat(150)));
         assertEquals(100, name.codePointCount(0, name.length()));
         assertTrue(name.codePoints().allMatch(c -> c == "😀".codePointAt(0)));
+    }
+
+    @Test
+    void cutNameDoesNotEndWithADotOrSpace() {
+        String name = ExportTree.fileName(titled("a".repeat(98) + ". b"));
+        assertEquals("a".repeat(98), name);
+    }
+
+    @Test
+    void pageNamedLikeASiblingsFileDoesNotCollide() throws Exception {
+        // 「大阪」の .md と、「大阪.md」という名前のページの子フォルダが、同じパスにならない
+        Page root = page("r", null, "旅行", 0);
+        Page osaka = page("o", "r", "大阪", 1);
+        Page osakaMd = page("m", "r", "大阪.md", 2);
+        Page child = page("c", "m", "子", 1);
+        Page readme = page("x", "r", "readme", 3);
+        Page readmeMd = page("y", "r", "README.md", 4);
+        Page child2 = page("z", "y", "子", 1);
+
+        ExportTree.write(dir, root, List.of(root, osaka, osakaMd, child, readme, readmeMd, child2), NO_BLOCKS);
+
+        Path top = dir.resolve("旅行");
+        assertTrue(Files.isRegularFile(top.resolve("大阪.md")));
+        assertTrue(Files.isRegularFile(top.resolve("大阪.md (2).md")));
+        assertTrue(Files.isRegularFile(top.resolve("大阪.md (2)").resolve("子.md")));
+        assertTrue(Files.isRegularFile(top.resolve("readme.md")));
+        assertTrue(Files.isRegularFile(top.resolve("README.md (2)").resolve("子.md")));
+    }
+
+    @Test
+    void writeReplacingKeepsTheOldFileUntilTheNewOneIsDone() throws Exception {
+        Path file = dir.resolve("京都.md");
+        Files.writeString(file, "前の");
+        ExportTree.writeReplacing(file, "新しい");
+        assertEquals("新しい", Files.readString(file));
+        assertEquals(List.of("京都.md"), list(dir));
+    }
+
+    @Test
+    void writeReplacingCreatesANewFile() throws Exception {
+        Path file = dir.resolve("新.md");
+        ExportTree.writeReplacing(file, "中身");
+        assertEquals("中身", Files.readString(file));
+        assertEquals(List.of("新.md"), list(dir));
     }
 
     @Test

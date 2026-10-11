@@ -48,6 +48,48 @@ class MarkdownWriterTest {
     }
 
     @Test
+    void titleThatLooksLikeHeadingSyntaxIsKept() {
+        assertEquals("# \\###\n", MarkdownWriter.write(new Page("p", null, "###", null, null, 0, 0, 0, null), List.of()));
+        assertEquals("# Done \\#\n", MarkdownWriter.write(new Page("p", null, "Done #", null, null, 0, 0, 0, null), List.of()));
+    }
+
+    @Test
+    void blankLineBetweenNumberedListsKeepsThemApart() {
+        // 画面では空の行の後でまた 1 から数える。CommonMark では空行だけだと1つのリストになる
+        add(NUMBERED, "一", 0).add(PARAGRAPH, "", 0).add(NUMBERED, "二", 0);
+        assertEquals("""
+            # 京都
+
+            1. 一
+
+            <!-- -->
+
+            1. 二
+            """, write());
+    }
+
+    @Test
+    void breakerInsideAnOuterListIsIndented() {
+        add(BULLET, "外", 0).add(NUMBERED, "一", 1).add(PARAGRAPH, "", 0).add(NUMBERED, "二", 1);
+        assertEquals("""
+            # 京都
+
+            - 外
+              1. 一
+
+              <!-- -->
+
+              1. 二
+            """, write());
+    }
+
+    @Test
+    void numberedListAfterAParagraphNeedsNoBreaker() {
+        add(NUMBERED, "一", 0).add(PARAGRAPH, "間", 0).add(PARAGRAPH, "", 0).add(NUMBERED, "二", 0);
+        assertEquals("# 京都\n\n1. 一\n\n間\n\n1. 二\n", write());
+    }
+
+    @Test
     void eachTypeHasItsMarker() {
         add(H1, "1日目", 0).add(H2, "午前", 0).add(H3, "朝", 0)
             .add(PARAGRAPH, "伏見稲荷へ行く", 0)
@@ -188,6 +230,12 @@ class MarkdownWriterTest {
             a\\
             \\- b
             """, write());
+    }
+
+    @Test
+    void paragraphStartingWithSpacesIsNotCode() {
+        add(PARAGRAPH, "    字下げした文", 0);
+        assertEquals("# 京都\n\n字下げした文\n", write());
     }
 
     @Test

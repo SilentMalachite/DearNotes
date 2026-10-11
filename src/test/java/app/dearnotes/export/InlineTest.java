@@ -35,9 +35,39 @@ class InlineTest {
 
     @Test
     void overlappingMarksCloseAndReopen() {
-        // 0..3 が太字、2..5 が斜体。境目で全部閉じて、続く方だけ開き直す
+        // 0..3 が太字、2..5 が斜体。記号では「****」となって読めないので、HTML のタグにする
         var marks = List.of(new Mark(0, 3, BOLD), new Mark(2, 5, ITALIC));
-        assertEquals("**あい*う***" + "*えお*", Inline.write("あいうえお", marks));
+        assertEquals("<strong>あい<em>う</em></strong><em>えお</em>", Inline.write("あいうえお", marks));
+    }
+
+    @Test
+    void markStartingWithPunctuationInsideAWordUsesTags() {
+        // a**(b)**c は CommonMark では太字にならない
+        assertEquals("a<strong>(b)</strong>c", Inline.write("a(b)c", List.of(new Mark(1, 4, BOLD))));
+        assertEquals("<strong>「太字」</strong>の", Inline.write("「太字」の", List.of(new Mark(0, 4, BOLD))));
+    }
+
+    @Test
+    void markStartingWithPunctuationAfterASpaceKeepsMarkers() {
+        assertEquals("a **(b)** c", Inline.write("a (b) c", List.of(new Mark(2, 5, BOLD))));
+    }
+
+    @Test
+    void boldNextToStrikeInsideAWordUsesTags() {
+        // a**~~x~~**b の ** は ~ と a に挟まれて開けない
+        var marks = List.of(new Mark(1, 2, BOLD), new Mark(1, 2, STRIKE));
+        assertEquals("a<strong><del>x</del></strong>b", Inline.write("axb", marks));
+    }
+
+    @Test
+    void entityLikeTextIsKept() {
+        assertEquals("Tom \\&amp; Jerry \\&#65; & a&b", Inline.write("Tom &amp; Jerry &#65; & a&b", List.of()));
+    }
+
+    @Test
+    void exclamationBeforeALinkDoesNotMakeAnImage() {
+        assertEquals("\\![example.com](example.com)", Inline.write("!example.com", List.of(new Mark(1, 12, LINK))));
+        assertEquals("すごい!", Inline.write("すごい!", List.of()));
     }
 
     @Test
@@ -97,5 +127,12 @@ class InlineTest {
         assertEquals("#タグ", Inline.escapeLineStart("#タグ"));
         assertEquals("-3度", Inline.escapeLineStart("-3度"));
         assertEquals("2026.10.11", Inline.escapeLineStart("2026.10.11"));
+        assertEquals("\\# 字下げした見出しではない", Inline.escapeLineStart("  # 字下げした見出しではない"));
+    }
+
+    @Test
+    void leadingSpacesDoNotMakeACodeBlock() {
+        assertEquals("\\*foo\\*", Inline.escapeLineStart("    \\*foo\\*"));
+        assertEquals("\u3000全角の字下げは残す", Inline.escapeLineStart("\u3000全角の字下げは残す"));
     }
 }

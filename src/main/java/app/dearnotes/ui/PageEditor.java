@@ -768,16 +768,17 @@ final class PageEditor extends VBox implements BlockView.Host {
         scrollPane.setVvalue(Math.clamp((b.getMinY() - 24) / (contentHeight - viewport), 0, 1));
     }
 
-    void saveTitle() {
+    /** 名前の変更を書く。書けなかったら false（変えていなければ true）。 */
+    boolean saveTitle() {
         renameLater.stop();
-        if (page == null || title.getText().equals(page.title())) return;
+        if (page == null || title.getText().equals(page.title())) return true;
         String t = title.getText();
-        if (Errors.run("名前を変更", () -> s.pages().rename(page.id(), t))) {
-            Errors.get("ページを読む", () -> s.pages().get(page.id()).orElse(null)).ifPresent(p -> {
-                page = p;
-                onPageChanged.accept(p);
-            });
-        }
+        if (!Errors.run("名前を変更", () -> s.pages().rename(page.id(), t))) return false;
+        Errors.get("ページを読む", () -> s.pages().get(page.id()).orElse(null)).ifPresent(p -> {
+            page = p;
+            onPageChanged.accept(p);
+        });
+        return true;
     }
 
     private void chooseIcon() {

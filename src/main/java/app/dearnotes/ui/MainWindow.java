@@ -6,8 +6,6 @@ import app.dearnotes.export.MarkdownWriter;
 import app.dearnotes.model.Page;
 import java.io.File;
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDate;
 import java.util.List;
@@ -247,7 +245,7 @@ public final class MainWindow implements Sidebar.Actions {
         prefs.put(EXPORT_DIR, file.getParent());
         Errors.get("ページを読む", () -> s.blocks().listByPage(page.id())).ifPresent(blocks -> {
             try {
-                Files.writeString(file.toPath(), MarkdownWriter.write(page, blocks), StandardCharsets.UTF_8);
+                ExportTree.writeReplacing(file.toPath(), MarkdownWriter.write(page, blocks));
             } catch (IOException e) {
                 Errors.show("書き出し", e);
             }
@@ -285,7 +283,8 @@ public final class MainWindow implements Sidebar.Actions {
 
     /** 書きかけを保存し、名前を DB から読み直す。保存できなければ書き出さずに null。 */
     private Page beforeExport(Page p) {
-        editor.saveTitle();
+        // 名前を変えられなかったら、古い名前で書き出さない（エラーの窓は editor が出す）
+        if (!editor.saveTitle()) return null;
         if (!s.saver().flushAndWait(3, TimeUnit.SECONDS)) {
             Errors.warn("書き出せませんでした",
                 "まだ保存できていない変更があります。少し待ってからもう一度試してください。");

@@ -20,8 +20,8 @@ public final class MarkdownWriter {
     private MarkdownWriter() {}
 
     public static String write(Page page, List<Block> blocks) {
-        var out = new StringBuilder("# ")
-            .append(Inline.escape(page.displayTitle().replace('\n', ' ')).strip()).append('\n');
+        var out = new StringBuilder();
+        headingBody(out, "# ", Inline.escape(page.displayTitle().replace('\n', ' ')).strip());
         // 段ごとに、その段の最後の行の子を置く桁。-1 はまだない
         int[] childColumn = new int[Block.MAX_INDENT + 1];
         Arrays.fill(childColumn, -1);
@@ -44,6 +44,11 @@ public final class MarkdownWriter {
             boolean tight = prev != null && prev.type().isList() && b.type().isList();
             if (!tight) out.append('\n');
             String pad = " ".repeat(base);
+            if (b.type() == BlockType.NUMBERED && continuesNumberedList(blocks, i)) {
+                // 画面では空の行の後で 1 から数え直す。CommonMark は空行だけでは同じリストと読むので、間に区切りを入れる
+                line(out, pad + "<!-- -->");
+                out.append('\n');
+            }
             // 子の行を置く桁は、リストの項目なら記号の後ろ
             int width = 0;
             switch (b.type()) {
@@ -89,11 +94,31 @@ public final class MarkdownWriter {
         }
     }
 
+    /**
+     * 番号を 1 から数え直す項目なのに、Markdown では前の番号付きリストの続きと読まれるか。
+     * 間に空の段落しかなく、同じ段の番号付きの項目が前にあるとき。
+     */
+    private static boolean continuesNumberedList(List<Block> blocks, int i) {
+        if (BlockOps.listNumber(blocks, i) != 1) return false;
+        int depth = blocks.get(i).indent();
+        for (int j = i - 1; j >= 0; j--) {
+            Block b = blocks.get(j);
+            if (b.type() == BlockType.PARAGRAPH && b.text().isBlank()) continue;
+            if (b.indent() > depth) continue;               // 前の項目の子の行
+            return b.indent() == depth && b.type() == BlockType.NUMBERED;
+        }
+        return false;
+    }
+
     private static void heading(StringBuilder out, String pad, String marker, Block b) {
-        String body = trimNewlines(Inline.write(b.text(), b.marks())).replace('\n', ' ');
+        headingBody(out, pad + marker, trimNewlines(Inline.write(b.text(), b.marks())).replace('\n', ' '));
+    }
+
+    /** 見出しの1行。行頭と末尾の # が、見出しの記号と読まれないようにする。 */
+    private static void headingBody(StringBuilder out, String lead, String body) {
         var closing = CLOSING_HASHES.matcher(body);
         if (closing.matches()) body = closing.group(1) + "\\" + closing.group(2);
-        content(out, pad + marker, body);
+        content(out, lead, body);
     }
 
     /** 記号と本文の1行。本文が空なら、記号の後ろの空白を消す。 */
