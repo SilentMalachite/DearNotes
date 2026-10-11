@@ -285,6 +285,56 @@ class PageEditorUiTest {
     }
 
     @Test
+    void typingBracketsAndEnterInsertsPageLink() throws Exception {
+        var kyoto = pages.create(null, "京都");
+        focusFirstBlock();
+        type("次は「「京");
+        press(KeyCode.ENTER);
+        type("へ");
+        assertEquals("次は京都へ", fx(() -> current().block().text()));
+        assertEquals(List.of(new Mark(2, 4, Mark.Style.PAGE, kyoto.id())), fx(() -> current().block().marks()));
+        assertEquals(1, summary().size());
+    }
+
+    @Test
+    void unknownNameCreatesChildPageAndStaysHere() throws Exception {
+        focusFirstBlock();
+        String here = fx(() -> window.editor().page().id());
+        type("[[奈良");
+        press(KeyCode.ENTER);
+        var nara = pages.findByTitle("奈良", 8).getFirst();
+        assertEquals(here, nara.parentId());
+        assertEquals(here, fx(() -> window.editor().page().id()));
+        assertEquals(List.of(new Mark(0, 2, Mark.Style.PAGE, nara.id())), fx(() -> current().block().marks()));
+    }
+
+    @Test
+    void openingPageLinkMovesToAliveTargetsOnly() throws Exception {
+        var kyoto = pages.create(null, "京都");
+        fx(() -> {
+            window.openPage(kyoto.id(), null);
+            return null;
+        });
+        settle();
+        assertEquals(kyoto.id(), fx(() -> window.editor().page().id()));
+
+        var other = pages.create(null, "別");
+        fx(() -> {
+            window.open(other);
+            return null;
+        });
+        settle();
+        pages.trash(kyoto.id(), 1);
+        fx(() -> {
+            window.openPage(kyoto.id(), null);
+            window.openPage("no-such-page", null);
+            return null;
+        });
+        settle();
+        assertEquals(other.id(), fx(() -> window.editor().page().id()));
+    }
+
+    @Test
     void deleteOnDividerRemovesItAndKeepsNextBlock() throws Exception {
         focusFirstBlock();
         type("---");

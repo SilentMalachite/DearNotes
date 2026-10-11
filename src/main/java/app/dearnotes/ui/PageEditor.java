@@ -3,6 +3,7 @@ package app.dearnotes.ui;
 import app.dearnotes.editor.BlockOps;
 import app.dearnotes.editor.Marks;
 import app.dearnotes.editor.Outline;
+import app.dearnotes.editor.PageLinks;
 import app.dearnotes.editor.PasteParser;
 import app.dearnotes.editor.SlashCommands.Command;
 import app.dearnotes.model.Block;
@@ -12,8 +13,8 @@ import app.dearnotes.model.Page;
 import app.dearnotes.model.SortKeys;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.TimeUnit;
-import java.util.function.Consumer;
 import javafx.animation.PauseTransition;
 import javafx.application.Platform;
 import javafx.geometry.Bounds;
@@ -36,13 +37,26 @@ import javafx.util.Duration;
 /** 1ページ分の編集画面。タイトルとブロックの縦の並び。 */
 final class PageEditor extends VBox implements BlockView.Host {
 
+    /** PageEditor から MainWindow に頼むこと。 */
+    interface Navigator {
+        /** 名前やアイコンが変わった。 */
+        void pageChanged(Page p);
+
+        /** リンク先のページへ移る。blockId があれば、その行へ。 */
+        void openPage(String pageId, String blockId);
+
+        /** parentId の子ページを作る。開かない。作れなければ空。 */
+        Optional<Page> newLinkedPage(String parentId, String title);
+    }
+
     private final Services s;
-    private final Consumer<Page> onPageChanged;
+    private final Navigator nav;
     private final Button iconButton = new Button();
     private final TextField title = new TextField();
     private final VBox blockBox = new VBox();
     private final List<BlockView> views = new ArrayList<>();
     private final SlashMenu slash = new SlashMenu(this::applySlash);
+    private final PageLinkMenu links = new PageLinkMenu(this::applyPageLink);
     private final PauseTransition renameLater = new PauseTransition(Duration.millis(300));
     private ScrollPane scrollPane;
     private Page page;
@@ -51,9 +65,9 @@ final class PageEditor extends VBox implements BlockView.Host {
     private Runnable outlineListener = () -> {};
     private boolean loadingTitle;
 
-    PageEditor(Services services, Consumer<Page> onPageChanged) {
+    PageEditor(Services services, Navigator nav) {
         this.s = services;
-        this.onPageChanged = onPageChanged;
+        this.nav = nav;
         getStyleClass().add("page-editor");
 
         iconButton.getStyleClass().add("page-icon");
@@ -133,6 +147,7 @@ final class PageEditor extends VBox implements BlockView.Host {
     boolean flushBeforeLeaving() {
         saveTitle();
         slash.hide();
+        links.hide();
         if (s.saver().flushAndWait(3, TimeUnit.SECONDS) || page == null) return true;
         Errors.warn("保存できていない変更があります",
             "いまのページの変更をまだ保存できていないので、ページを切り替えませんでした。少し待ってからもう一度開いてください。");
@@ -403,16 +418,34 @@ final class PageEditor extends VBox implements BlockView.Host {
 
     @Override
     public boolean slashKey(BlockView v, KeyEvent e) {
-        return slash.handleKey(v, e);
+        return links.handleKey(v, e) || slash.handleKey(v, e);
     }
 
     @Override
     public void linkQuery(BlockView v) {
+        // 変更の知らせのあとでカーソルが動くことがあるので、次の回で読む
+        Platform.runLater(() -> {
+            if (!views.contains(v) || v.block().type() == BlockType.CODE) {
+                links.close(v);
+                return;
+            }
+            PageLinks.queryAt(v.text(), v.caret()).ifPresentOrElse(q -> {
+                String name = q.text().strip();
+                var items = new ArrayList<PageLinkMenu.Choice>();
+                Errors.get("ページを探す", () -> s.pages().findByTitle(name, 8)).ifPresent(found -> {
+                    for (Page p : found) items.add(new PageLinkMenu.Choice(p, p.displayTitle()));
+                });
+                boolean exact = items.stream().anyMatch(c -> c.page().title().equals(name));
+                if (!name.isEmpty() && !exact) items.add(new PageLinkMenu.Choice(null, name));
+                links.show(v, q.from(), items);
+            }, () -> links.close(v));
+        });
     }
 
     @Override
     public void blurred(BlockView v) {
         slash.update(v, null);
+        links.close(v);
     }
 
     @Override
@@ -492,6 +525,7 @@ final class PageEditor extends VBox implements BlockView.Host {
 
     @Override
     public void openPage(String pageId) {
+        nav.openPage(pageId, null);
     }
 
     @Override
@@ -525,6 +559,18 @@ final class PageEditor extends VBox implements BlockView.Host {
     private void applySlash(BlockView v, Command c) {
         // 「/語句」を消してから種類を変える
         convert(v, c.type(), v.text().length());
+    }
+
+    /** 「[[語句」を、選んだページへのリンクに置き換える。新しいページの行なら、先に子ページを作る。 */
+    private void applyPageLink(BlockView v, int from, PageLinkMenu.Choice c) {
+        Page target = c.page();
+        if (target == null) {
+            target = nav.newLinkedPage(page.id(), c.name()).orElse(null);
+            if (target == null) return;
+        }
+        int caret = v.caret();
+        if (from < 0 || from > caret) return;
+        v.insertPageLink(from, caret, target.displayTitle().replace('\n', ' '), target.id());
     }
 
     private void change(BlockView v, Block b) {
@@ -789,7 +835,7 @@ final class PageEditor extends VBox implements BlockView.Host {
         if (!Errors.run("名前を変更", () -> s.pages().rename(page.id(), t))) return false;
         Errors.get("ページを読む", () -> s.pages().get(page.id()).orElse(null)).ifPresent(p -> {
             page = p;
-            onPageChanged.accept(p);
+            nav.pageChanged(p);
         });
         return true;
     }
@@ -806,7 +852,7 @@ final class PageEditor extends VBox implements BlockView.Host {
             if (Errors.run("アイコンを変更", () -> s.pages().setIcon(page.id(), value))) {
                 Errors.get("ページを読む", () -> s.pages().get(page.id()).orElse(null)).ifPresent(p -> {
                     pageUpdated(p);
-                    onPageChanged.accept(p);
+                    nav.pageChanged(p);
                 });
             }
         });

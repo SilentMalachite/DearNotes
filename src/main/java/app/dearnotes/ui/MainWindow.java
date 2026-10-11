@@ -34,7 +34,7 @@ import javafx.stage.FileChooser;
 import javafx.stage.Stage;
 
 /** 左にサイドバー、右に開いているページ。 */
-public final class MainWindow implements Sidebar.Actions {
+public final class MainWindow implements Sidebar.Actions, PageEditor.Navigator {
 
     // 別のデータフォルダで試すときは、前回のページも別に覚える
     private static final String LAST_PAGE = System.getProperty("dearnotes.dataDir") == null
@@ -58,7 +58,7 @@ public final class MainWindow implements Sidebar.Actions {
         this.stage = stage;
         this.s = services;
         this.sidebar = new Sidebar(services, this);
-        this.editor = new PageEditor(services, this::pageChanged);
+        this.editor = new PageEditor(services, this);
         this.outline = new OutlinePanel(editor::jumpTo);
         // 目次は初めは閉じておく
         outline.setVisible(false);
@@ -332,10 +332,35 @@ public final class MainWindow implements Sidebar.Actions {
         Errors.get("ページを開く", () -> s.pages().get(h.pageId()).orElse(null)).ifPresent(p -> open(p, h.blockId()));
     }
 
-    private void pageChanged(Page p) {
+    @Override
+    public void pageChanged(Page p) {
         sidebar.reload(p.id());
         editor.pageUpdated(p);
         updateHeader(p);
+    }
+
+    // ---- PageEditor.Navigator ----
+
+    @Override
+    public void openPage(String pageId, String blockId) {
+        Errors.get("ページを開く", () -> s.pages().get(pageId)).ifPresent(found -> {
+            if (found.isEmpty()) {
+                Errors.warn("リンク先のページがありません", "ページは完全に削除されました。");
+            } else if (found.get().isTrashed()) {
+                Errors.warn("「" + found.get().displayTitle() + "」はゴミ箱にあります",
+                    "ゴミ箱から元に戻すと、このリンクから開けます。");
+            } else {
+                open(found.get(), blockId);
+            }
+        });
+    }
+
+    @Override
+    public Optional<Page> newLinkedPage(String parentId, String title) {
+        Optional<Page> created = Errors.get("ページを作る", () -> s.pages().create(parentId, title));
+        Page current = editor.page();
+        created.ifPresent(p -> sidebar.reload(current == null ? null : current.id()));
+        return created;
     }
 
     private void updateHeader(Page p) {
