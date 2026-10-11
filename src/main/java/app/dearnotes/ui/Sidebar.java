@@ -44,7 +44,7 @@ final class Sidebar extends VBox {
         void showSearch();
     }
 
-    private enum Drop { BEFORE, INTO, AFTER }
+    enum Drop { BEFORE, INTO, AFTER }
 
     private final Services s;
     private final Actions actions;
@@ -182,12 +182,12 @@ final class Sidebar extends VBox {
         Page moving = dragging;
         if (moving == null || moving.id().equals(target.id())) return;
         String parentId = where == Drop.INTO ? target.id() : target.parentId();
-        Double key = keyFor(parentId, moving, target, where);
+        Double key = keyFor(alive, parentId, moving, target, where);
         if (key == null) {
             Errors.run("並べ替え", () -> s.pages().respaceChildren(parentId));
             alive = Errors.get("ページの一覧を読む", s.pages()::listAlive).orElse(List.of());
             Page fresh = alive.stream().filter(p -> p.id().equals(target.id())).findFirst().orElse(target);
-            key = keyFor(parentId, moving, fresh, where);
+            key = keyFor(alive, parentId, moving, fresh, where);
         }
         double k = key == null ? SortKeys.GAP : key;
         if (Errors.run("ページを移動", () -> s.pages().move(moving.id(), parentId, k))) {
@@ -196,18 +196,24 @@ final class Sidebar extends VBox {
         }
     }
 
-    private Double keyFor(String parentId, Page moving, Page target, Drop where) {
+    static Double keyFor(List<Page> alive, String parentId, Page moving, Page target, Drop where) {
         List<Page> siblings = alive.stream()
             .filter(p -> Objects.equals(p.parentId(), parentId) && !p.id().equals(moving.id()) && !p.isDaily())
             .sorted(Comparator.comparingDouble(Page::sortKey))
             .toList();
-        if (where == Drop.INTO) {
-            return SortKeys.between(siblings.isEmpty() ? null : siblings.getLast().sortKey(), null);
-        }
+        Double last = siblings.isEmpty() ? null : siblings.getLast().sortKey();
         int i = siblings.indexOf(target);
-        if (i < 0) return SortKeys.between(siblings.isEmpty() ? null : siblings.getLast().sortKey(), null);
-        Double prev = where == Drop.BEFORE ? (i > 0 ? siblings.get(i - 1).sortKey() : null) : siblings.get(i).sortKey();
-        Double next = where == Drop.BEFORE ? siblings.get(i).sortKey() : (i + 1 < siblings.size() ? siblings.get(i + 1).sortKey() : null);
+        if (where == Drop.INTO || i < 0) return SortKeys.between(last, null);
+        // 条件演算子を入れ子にすると null が double に変換されて落ちるので、if で分ける
+        Double prev;
+        Double next;
+        if (where == Drop.BEFORE) {
+            prev = i > 0 ? siblings.get(i - 1).sortKey() : null;
+            next = siblings.get(i).sortKey();
+        } else {
+            prev = siblings.get(i).sortKey();
+            next = i + 1 < siblings.size() ? siblings.get(i + 1).sortKey() : null;
+        }
         return SortKeys.between(prev, next);
     }
 

@@ -94,11 +94,18 @@ final class PageEditor extends VBox implements BlockView.Host {
         return List.copyOf(views);
     }
 
-    /** ページを開く。開く前に書きかけの変更を DB に入れておく。 */
-    void open(Page p, String focusBlockId) {
+    /**
+     * ページを開く。開く前に書きかけの変更を DB に入れておく。
+     * 書けなかったら、DB の古い本文で上書きしないよう今のページのままにして false。
+     */
+    boolean open(Page p, String focusBlockId) {
         saveTitle();
         slash.hide();
-        s.saver().flushAndWait(3, TimeUnit.SECONDS);
+        if (!s.saver().flushAndWait(3, TimeUnit.SECONDS) && page != null) {
+            Errors.warn("保存できていない変更があります",
+                "いまのページの変更をまだ保存できていないので、ページを切り替えませんでした。少し待ってからもう一度開いてください。");
+            return false;
+        }
         // 開く前に書いた名前を反映させるため、読み直す
         String id = p.id();
         this.page = Errors.get("ページを読む", () -> s.pages().get(id).orElse(null)).orElse(p);
@@ -110,7 +117,7 @@ final class PageEditor extends VBox implements BlockView.Host {
         var loaded = Errors.get("ページを開く", () -> s.blocks().listByPage(page.id()));
         views.clear();
         blockBox.getChildren().clear();
-        if (loaded.isEmpty()) return;   // 読めなかったときは空の行を足さない（中身を上書きしないように）
+        if (loaded.isEmpty()) return true;   // 読めなかったときは空の行を足さない（中身を上書きしないように）
         for (Block b : loaded.get()) addView(views.size(), b);
         if (views.isEmpty()) {
             Block first = Block.empty(page.id(), BlockType.PARAGRAPH, SortKeys.GAP);
@@ -134,6 +141,7 @@ final class PageEditor extends VBox implements BlockView.Host {
                 views.getFirst().focusEnd();
             }
         });
+        return true;
     }
 
     /** サイドバーで名前やアイコンが変わったとき。 */
@@ -348,8 +356,16 @@ final class PageEditor extends VBox implements BlockView.Host {
             last = insertBlock(views.indexOf(last) + 1, b);
         }
         int end = last.text().length();
-        if (!tail.isEmpty()) {
-            last.setContent(last.text() + tail, Marks.concat(last.block().marks(), end, tailMarks));
+        if (!tail.isEmpty() && last.block().type() == BlockType.DIVIDER) {
+            // 区切り線の本文は見えないので、カーソルより後ろは下の新しい行に入れる
+            Block rest = Block.empty(page.id(), BlockType.PARAGRAPH, 0).withIndent(baseIndent)
+                .withContent(tail, tailMarks);
+            last = insertBlock(views.indexOf(last) + 1, rest);
+            end = 0;
+        } else if (!tail.isEmpty()) {
+            List<Mark> marks = last.block().type() == BlockType.CODE
+                ? List.of() : Marks.concat(last.block().marks(), end, tailMarks);
+            last.setContent(last.text() + tail, marks);
             s.saver().changed(last.block());
         }
         last.focusAt(end);

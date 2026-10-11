@@ -42,8 +42,11 @@ class PageEditorUiTest {
     PageRepo pages;
     BlockRepo blocks;
     AutoSaver saver;
+    Services services;
     Stage stage;
     MainWindow window;
+    /** true のあいだ、ブロックの保存を失敗させる（別の接続がロックしているときの代わり）。 */
+    volatile boolean failSaves;
 
     @BeforeAll
     static void startFx() {
@@ -65,8 +68,11 @@ class PageEditorUiTest {
         db = Database.open(dir.resolve("ui.db"));
         pages = new PageRepo(db);
         blocks = new BlockRepo(db);
-        saver = new AutoSaver(blocks, Platform::runLater, 50, 1000);
-        var services = new Services(db, pages, blocks, new SearchRepo(db), saver, url -> {});
+        saver = new AutoSaver((upserts, deletes) -> {
+            if (failSaves) throw new java.sql.SQLException("database is locked");
+            blocks.save(upserts, deletes);
+        }, Platform::runLater, 50, 1000);
+        services = new Services(db, pages, blocks, new SearchRepo(db), saver, url -> {});
         fx(() -> {
             stage = new Stage();
             window = new MainWindow(stage, services);
@@ -265,6 +271,100 @@ class PageEditorUiTest {
         });
         press(KeyCode.ENTER);
         assertEquals(List.of("paragraph:0:ab", "paragraph:0:ef"), summary());
+    }
+
+    @Test
+    void failedFlushKeepsCurrentPageAndUnsavedEdits() throws Exception {
+        focusFirstBlock();
+        type("AB");
+        assertTrue(saver.flushAndWait(2, TimeUnit.SECONDS));
+        String pageId = fx(() -> window.editor().page().id());
+        var other = pages.create(null, "別のページ");
+
+        failSaves = true;
+        type("C");
+        fx(() -> {
+            window.open(other);
+            return null;
+        });
+        settle();
+        // 保存できないあいだはページを切り替えず、書いた文字も残す
+        assertEquals(pageId, fx(() -> window.editor().page().id()));
+        assertEquals(List.of("paragraph:0:ABC"), summary());
+
+        failSaves = false;
+        assertTrue(saver.flushAndWait(2, TimeUnit.SECONDS));
+        assertEquals(List.of("ABC"), blocks.listByPage(pageId).stream().map(Block::text).toList());
+    }
+
+    @Test
+    void pastingLinesEndingWithDividerKeepsTailVisible() throws Exception {
+        focusFirstBlock();
+        type("AB");
+        fx(() -> {
+            current().area().moveTo(1);
+            var content = new javafx.scene.input.ClipboardContent();
+            content.putString("x\n---");
+            javafx.scene.input.Clipboard.getSystemClipboard().setContent(content);
+            return null;
+        });
+        press(KeyCode.V, KeyMod.SHORTCUT);
+        assertEquals(List.of("paragraph:0:Ax", "divider:0:", "paragraph:0:B"), summary());
+    }
+
+    @Test
+    void slashInCodeBlockIsPlainText() throws Exception {
+        focusFirstBlock();
+        type("```");
+        assertEquals(List.of("code:0:"), summary());
+        type("/");
+        press(KeyCode.ENTER);
+        assertEquals(List.of("code:0:/\n"), summary());
+    }
+
+    @Test
+    void shiftDownSelectsTextInsteadOfMovingToNextBlock() throws Exception {
+        focusFirstBlock();
+        type("abcd");
+        press(KeyCode.ENTER);
+        type("efgh");
+        fx(() -> {
+            window.editor().views().getFirst().focusAt(2);
+            return null;
+        });
+        settle();
+        press(KeyCode.DOWN, KeyMod.SHIFT);
+        BlockView first = fx(() -> window.editor().views().getFirst());
+        assertSame(first, fx(this::current));
+        assertEquals("cd", fx(() -> first.area().getSelectedText()));
+
+        press(KeyCode.UP, KeyMod.SHIFT);
+        assertSame(first, fx(this::current));
+        assertEquals("ab", fx(() -> first.area().getSelectedText()));
+    }
+
+    @Test
+    void enterRightAfterChangingQueryOpensNewResult() throws Exception {
+        var tokyo = pages.create(null, "東京メモ");
+        var osaka = pages.create(null, "大阪メモ");
+        var opened = new java.util.ArrayList<String>();
+        var dialog = fx(() -> new SearchDialog(stage, services, h -> opened.add(h.pageId())));
+        fx(() -> {
+            dialog.field().setText("東京");
+            dialog.show();
+            return null;
+        });
+        settle();
+        fx(() -> {
+            // 待ち時間（120ms）が過ぎる前に Enter を押す
+            dialog.field().setText("大阪");
+            dialog.field().fireEvent(new KeyEvent(KeyEvent.KEY_PRESSED, "", "", KeyCode.ENTER,
+                false, false, false, false));
+            return null;
+        });
+        settle();
+        assertEquals(List.of(osaka.id()), opened);
+        assertNotEquals(tokyo.id(), opened.getFirst());
     }
 
     // ---- helpers ----
