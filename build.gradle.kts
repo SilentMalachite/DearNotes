@@ -5,7 +5,7 @@ plugins {
 }
 
 group = "app.dearnotes"
-version = "1.0.0"
+version = "1.0.1"
 
 val javafxVersion = "25.0.4"
 
