@@ -446,7 +446,8 @@ final class PageEditor extends VBox implements BlockView.Host {
             List<Mark> marks = last.block().type() == BlockType.CODE
                 ? List.of() : Marks.concat(last.block().marks(), end, tailMarks);
             last.setContent(last.text() + tail, marks);
-            s.saver().changed(last.block());
+            // setContent は編集の知らせを出さないので、保存と目次の更新をここでする
+            edited(last);
         }
         last.focusAt(end);
         ensureVisible(last);
@@ -725,14 +726,18 @@ final class PageEditor extends VBox implements BlockView.Host {
         else v.focusAt(0);
     }
 
-    private void clickBelowLastBlock() {
+    void clickBelowLastBlock() {
         if (page == null || views.isEmpty()) return;
-        BlockView last = views.getLast();
-        if (!last.hidden() && last.block().type() == BlockType.PARAGRAPH && last.text().isEmpty()) {
+        BlockView last = views.get(Math.max(visibleBefore(views.size()), 0));
+        if (last.block().type() == BlockType.PARAGRAPH && last.text().isEmpty() && !last.block().collapsed()) {
             last.focusAt(0);
-        } else {
-            insertBlock(views.size(), Block.empty(page.id(), BlockType.PARAGRAPH, 0)).focusAt(0);
+            return;
         }
+        // 畳んだ見出しが最後の節なら、段落はその節に入って開いてしまう。Enter と同じく同じ段の見出しにする
+        Block lb = last.block();
+        BlockType type = lb.collapsed() && Outline.level(lb.type()) > 0 && lb.indent() == 0
+            ? lb.type() : BlockType.PARAGRAPH;
+        insertBlock(views.size(), Block.empty(page.id(), type, 0)).focusAt(0);
     }
 
     private void ensureVisible(Node node) {

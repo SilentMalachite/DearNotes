@@ -593,6 +593,65 @@ class PageEditorUiTest {
         assertTrue(visibleSummary().contains("bullet:1:T"));
     }
 
+    @Test
+    void clickingBelowCollapsedLastSectionKeepsItClosed() throws Exception {
+        openRows(
+            row(BlockType.H2, 0, "A", false), row(BlockType.PARAGRAPH, 0, "a1", false),
+            row(BlockType.H2, 0, "B", true), row(BlockType.PARAGRAPH, 0, "b1", false));
+        fx(() -> {
+            window.editor().clickBelowLastBlock();
+            return null;
+        });
+        settle();
+        // 段落だと B の節に入って開いてしまうので、同じ段の見出しを足す
+        assertEquals(List.of("h2:0:A", "paragraph:0:a1", "h2:0:B", "h2:0:"), visibleSummary());
+        assertTrue(fx(() -> window.editor().views().get(2).block().collapsed()));
+        assertEquals(4, fx(() -> window.editor().views().indexOf(current())));
+    }
+
+    @Test
+    void clickingBelowCollapsedLastItemAddsParagraphAfterHiddenRows() throws Exception {
+        openRows(row(BlockType.BULLET, 0, "R", true), row(BlockType.BULLET, 1, "R1", false));
+        fx(() -> {
+            window.editor().clickBelowLastBlock();
+            return null;
+        });
+        settle();
+        assertEquals(List.of("bullet:0:R", "paragraph:0:"), visibleSummary());
+        assertTrue(fx(() -> window.editor().views().getFirst().block().collapsed()));
+    }
+
+    @Test
+    void movingCollapsedHeadingTakesIndentedHeadingUnderItsItem() throws Exception {
+        String pageId = openRows(
+            row(BlockType.H2, 0, "A", true), row(BlockType.BULLET, 0, "B", true),
+            row(BlockType.H2, 1, "C", false), row(BlockType.PARAGRAPH, 1, "D", false),
+            row(BlockType.H1, 0, "E", false));
+        assertEquals(List.of("h2:0:A", "h1:0:E"), visibleSummary());
+        focusEndOf(0);
+        press(KeyCode.DOWN, KeyMod.SHORTCUT, KeyMod.SHIFT);
+        assertEquals(List.of("h1:0:E", "h2:0:A", "bullet:0:B", "h2:1:C", "paragraph:1:D"), summary());
+        assertTrue(saver.flushAndWait(2, TimeUnit.SECONDS));
+        assertEquals(List.of("E", "A", "B", "C", "D"),
+            blocks.listByPage(pageId).stream().map(Block::text).toList());
+    }
+
+    @Test
+    void pastingIntoHeadingKeepsOutlineInSync() throws Exception {
+        openRows(row(BlockType.H2, 0, "AB", false));
+        fx(() -> {
+            window.toggleOutline();
+            BlockView v = window.editor().views().getFirst();
+            v.focusAt(1);
+            window.editor().pasteLines(v, "x\n");
+            return null;
+        });
+        settle();
+        assertEquals("AxB", fx(() -> window.editor().views().getFirst().block().text()));
+        assertEquals(List.of("AxB"),
+            fx(() -> window.outline().items().stream().map(javafx.scene.control.Label::getText).toList()));
+    }
+
     // ---- helpers ----
 
     enum KeyMod { SHIFT, SHORTCUT }

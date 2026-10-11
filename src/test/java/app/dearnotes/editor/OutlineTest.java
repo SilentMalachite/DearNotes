@@ -59,6 +59,33 @@ class OutlineTest {
     }
 
     @Test
+    void indentedHeadingSectionEndsAtShallowerRow() {
+        var list = List.of(
+            b(BULLET, 0, "旅の記録"),
+            b(H3, 1, "午前"),
+            b(PARAGRAPH, 1, "伏見稲荷"),
+            b(PARAGRAPH, 2, "千本鳥居"),
+            b(PARAGRAPH, 0, "おわり"),
+            b(PARAGRAPH, 1, "あとがき"));
+        assertEquals(4, Outline.end(list, 1));      // 字下げが浅い「おわり」の手前で終わる
+        assertEquals(4, Outline.end(list, 0));
+    }
+
+    @Test
+    void headingSectionContainsHeadingsIndentedUnderItsRows() {
+        var list = List.of(
+            b(H2, 0, "1日目"),
+            b(BULLET, 0, "お昼"),
+            b(H2, 1, "錦市場"),                  // 箇条書きの下に字下げした見出し
+            b(PARAGRAPH, 1, "だし巻き"),
+            b(H1, 0, "2日目"));
+        // 字下げした見出しでは節は終わらない。箇条書きの範囲が見出しの範囲からはみ出さない
+        assertEquals(4, Outline.end(list, 0));
+        assertEquals(4, Outline.end(list, 1));
+        assertEquals(4, Outline.end(list, 2));
+    }
+
+    @Test
     void hiddenRowsAreInsideCollapsedRanges() {
         var list = List.of(
             folded(H2, 0, "1日目"),

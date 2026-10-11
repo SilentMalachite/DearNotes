@@ -7,7 +7,8 @@ import java.util.List;
 
 /**
  * 畳む範囲と目次の計算。UI から切り離してテストする。
- * 見出しの範囲は、同じか上の段の見出しの手前まで。
+ * 見出しの範囲は、字下げが自分以下の同じか上の段の見出しか、字下げが自分より浅い行の手前まで。
+ * こうすると範囲どうしは入れ子か別々になり、途中で交わらない。
  * それ以外の行の範囲は、字下げが自分より深い行が続くところまで。
  */
 public final class Outline {
@@ -34,8 +35,12 @@ public final class Outline {
         int i = index + 1;
         if (lv > 0) {
             while (i < blocks.size()) {
-                int other = level(blocks.get(i).type());
-                if (other > 0 && other <= lv) break;
+                Block b = blocks.get(i);
+                int other = level(b.type());
+                // 自分より深く字下げした見出しは、上の行の子なので節を終わらせない
+                if (other > 0 && other <= lv && b.indent() <= self.indent()) break;
+                // 字下げした見出しは、字下げが浅い行で終わる（親の行の外まで畳まない）
+                if (b.indent() < self.indent()) break;
                 i++;
             }
         } else {
