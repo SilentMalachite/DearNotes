@@ -254,7 +254,8 @@ final class BlockView extends HBox {
         if (text.equals(block.text()) && marks.equals(block.marks())) return;
         block = block.withContent(text, marks);
         host.edited(this);
-        host.slashQuery(this, SlashCommands.queryOf(text));
+        // コードの中の「/」はただの文字。候補は出さず、出ていれば閉じる
+        host.slashQuery(this, block.type() == BlockType.CODE ? null : SlashCommands.queryOf(text));
     }
 
     /** 行頭に「# 」などを打ったら、その種類に変える。 */
@@ -335,15 +336,18 @@ final class BlockView extends HBox {
                 host.indent(this, e.isShiftDown() ? -1 : 1);
                 e.consume();
             }
+            // Shift+↑↓ は範囲選択。ほかのブロックへは移らず、端の行では本文の先頭・末尾まで選ぶ
             case UP -> {
                 if (onFirstLine()) {
-                    host.focusPrevious(this);
+                    if (e.isShiftDown()) area.selectRange(area.getAnchor(), 0);
+                    else host.focusPrevious(this);
                     e.consume();
                 }
             }
             case DOWN -> {
                 if (onLastLine()) {
-                    host.focusNext(this);
+                    if (e.isShiftDown()) area.selectRange(area.getAnchor(), length);
+                    else host.focusNext(this);
                     e.consume();
                 }
             }

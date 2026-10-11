@@ -139,15 +139,23 @@ public final class MainWindow implements Sidebar.Actions {
         open(p, null);
     }
 
-    private void open(Page p, String blockId) {
-        editor.open(p, blockId);
+    /** 開けなかったら（書きかけを保存できないとき）、サイドバーの選択を今のページに戻して false。 */
+    private boolean open(Page p, String blockId) {
+        if (!editor.open(p, blockId)) {
+            Page current = editor.page();
+            sidebar.select(current == null ? null : current.id());
+            return false;
+        }
         prefs.put(LAST_PAGE, p.id());
         sidebar.select(p.id());
         updateHeader(p);
+        return true;
     }
 
     @Override
     public void openToday() {
+        // 移れないときに日記を作ったりゴミ箱から戻したりしないよう、先に保存する
+        if (!editor.flushBeforeLeaving()) return;
         Errors.get("今日の日記を開く", () -> s.pages().openDaily(LocalDate.now())).ifPresent(p -> {
             sidebar.reload(p.id());
             open(p);
@@ -156,10 +164,10 @@ public final class MainWindow implements Sidebar.Actions {
 
     @Override
     public void newPage(String parentId) {
+        if (!editor.flushBeforeLeaving()) return;
         Errors.get("ページを作る", () -> s.pages().create(parentId, "")).ifPresent(p -> {
             sidebar.reload(p.id());
-            open(p);
-            editor.focusTitle();
+            if (open(p, null)) editor.focusTitle();
         });
     }
 

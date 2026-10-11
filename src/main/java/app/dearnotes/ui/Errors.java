@@ -42,6 +42,15 @@ final class Errors {
         }
     }
 
+    static void warn(String header, String message) {
+        LOG.warning(header);
+        var alert = new Alert(Alert.AlertType.WARNING);
+        alert.setTitle("DearNotes");
+        alert.setHeaderText(header);
+        alert.setContentText(message);
+        alert.show();
+    }
+
     static void show(String what, Exception e) {
         LOG.log(Level.WARNING, what, e);
         var alert = new Alert(Alert.AlertType.ERROR);

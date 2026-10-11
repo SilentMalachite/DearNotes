@@ -29,6 +29,8 @@ final class SearchDialog {
     private final ListView<Hit> results = new ListView<>();
     private final Label empty = new Label();
     private final PauseTransition debounce = new PauseTransition(Duration.millis(120));
+    /** いまの results を出したときの検索語。 */
+    private String searchedQuery;
 
     SearchDialog(Window owner, Services services, Consumer<Hit> onOpen) {
         this.s = services;
@@ -61,7 +63,13 @@ final class SearchDialog {
             }
         });
         results.setOnMouseClicked(e -> {
-            if (e.getClickCount() >= 1) openSelected();
+            // 語句を変えた直後の古い結果は開かず、探し直すだけにする
+            if (!field.getText().equals(searchedQuery)) {
+                debounce.stop();
+                runSearch();
+            } else if (e.getClickCount() >= 1) {
+                openSelected();
+            }
         });
 
         field.setOnKeyPressed(e -> {
@@ -79,7 +87,8 @@ final class SearchDialog {
                 }
                 case ENTER -> {
                     debounce.stop();
-                    if (results.getItems().isEmpty()) runSearch();
+                    // 語句を変えてすぐ Enter したときは、古い結果を開かないよう探し直す
+                    if (results.getItems().isEmpty() || !field.getText().equals(searchedQuery)) runSearch();
                     openSelected();
                     e.consume();
                 }
@@ -105,6 +114,14 @@ final class SearchDialog {
         });
     }
 
+    TextField field() {
+        return field;
+    }
+
+    ListView<Hit> results() {
+        return results;
+    }
+
     void show() {
         // 書きかけの変更も探せるように、先に書いておく
         s.saver().flushAndWait(2, TimeUnit.SECONDS);
@@ -119,6 +136,7 @@ final class SearchDialog {
 
     private void runSearch() {
         String q = field.getText();
+        searchedQuery = q;
         if (q == null || q.isBlank()) {
             results.getItems().clear();
             empty.setText("語句を入れると、すべてのページから探します");

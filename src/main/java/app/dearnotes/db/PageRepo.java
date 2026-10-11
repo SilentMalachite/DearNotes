@@ -63,19 +63,15 @@ public final class PageRepo {
                 ps.setLong(5, now);
                 ps.executeUpdate();
             }
-            // ゴミ箱にあった日記は戻す
-            try (var ps = c.prepareStatement(
-                    "UPDATE pages SET deleted_at = NULL, parent_id = NULL WHERE daily_date = ? AND deleted_at IS NOT NULL")) {
-                ps.setString(1, date.toString());
+            Page daily = query(c, "SELECT " + COLUMNS + " FROM pages WHERE daily_date = ?", date.toString()).getFirst();
+            if (!daily.isTrashed()) return daily;
+            // ゴミ箱にあった日記は、一緒に捨てた子ページごと戻す
+            restoreTree(c, daily.id());
+            try (var ps = c.prepareStatement("UPDATE pages SET parent_id = NULL WHERE id = ?")) {
+                ps.setString(1, daily.id());
                 ps.executeUpdate();
             }
-            try (var ps = c.prepareStatement("SELECT " + COLUMNS + " FROM pages WHERE daily_date = ?")) {
-                ps.setString(1, date.toString());
-                try (var rs = ps.executeQuery()) {
-                    rs.next();
-                    return map(rs);
-                }
-            }
+            return get(c, daily.id()).orElseThrow();
         });
     }
 
@@ -169,23 +165,9 @@ public final class PageRepo {
         });
     }
 
-    /** ゴミ箱から戻す。親がゴミ箱にあれば一番上の階層に出す。 */
     public void restore(String id) throws SQLException {
         db.write(c -> {
-            try (var ps = c.prepareStatement("""
-                    WITH RECURSIVE sub(id) AS (
-                      SELECT ?
-                      UNION ALL
-                      SELECT p.id FROM pages p JOIN sub ON p.parent_id = sub.id
-                    )
-                    UPDATE pages SET deleted_at = NULL
-                    WHERE id IN sub
-                      AND deleted_at = (SELECT deleted_at FROM pages WHERE id = ?)""")) {
-                // 一緒にゴミ箱へ入れた子だけ戻す。先に別で捨てた子は残す
-                ps.setString(1, id);
-                ps.setString(2, id);
-                ps.executeUpdate();
-            }
+            restoreTree(c, id);
             try (var ps = c.prepareStatement("""
                     UPDATE pages SET parent_id = NULL
                     WHERE id = ? AND parent_id IN (SELECT id FROM pages WHERE deleted_at IS NOT NULL)""")) {
@@ -225,6 +207,23 @@ public final class PageRepo {
                 return ps.executeUpdate();
             }
         });
+    }
+
+    /** id と、id と一緒にゴミ箱へ入れた子孫を戻す。先に別で捨てた子は残す。 */
+    private static void restoreTree(Connection c, String id) throws SQLException {
+        try (var ps = c.prepareStatement("""
+                WITH RECURSIVE sub(id) AS (
+                  SELECT ?
+                  UNION ALL
+                  SELECT p.id FROM pages p JOIN sub ON p.parent_id = sub.id
+                )
+                UPDATE pages SET deleted_at = NULL
+                WHERE id IN sub
+                  AND deleted_at = (SELECT deleted_at FROM pages WHERE id = ?)""")) {
+            ps.setString(1, id);
+            ps.setString(2, id);
+            ps.executeUpdate();
+        }
     }
 
     private static double nextChildKey(Connection c, String parentId) throws SQLException {

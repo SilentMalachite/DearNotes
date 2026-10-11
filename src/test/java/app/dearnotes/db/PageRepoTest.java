@@ -44,6 +44,20 @@ class PageRepoTest extends DbTestBase {
     }
 
     @Test
+    void openDailyRestoresChildrenTrashedTogether() throws Exception {
+        LocalDate day = LocalDate.of(2026, 10, 11);
+        Page diary = pages.openDaily(day);
+        Page child = pages.create(diary.id(), "子");
+        Page earlier = pages.create(diary.id(), "先に捨てた子");
+        pages.trash(earlier.id(), 500);
+        pages.trash(diary.id(), 1000);
+
+        pages.openDaily(day);
+        assertFalse(pages.get(child.id()).orElseThrow().isTrashed());
+        assertTrue(pages.get(earlier.id()).orElseThrow().isTrashed());
+    }
+
+    @Test
     void trashMovesWholeSubtreeAndRestoreBringsItBack() throws Exception {
         Page root = pages.create(null, "親");
         Page child = pages.create(root.id(), "子");
