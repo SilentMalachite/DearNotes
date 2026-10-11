@@ -160,6 +160,14 @@ class PageRepoTest extends DbTestBase {
         assertEquals(List.of(), pages.findByTitle("100%", 8));
     }
 
+    @Test
+    void findByTitlePutsExactMatchBeforeTheLimit() throws Exception {
+        var kyoto = pages.create(null, "京都");
+        Thread.sleep(5);
+        pages.create(null, "京都メモ");
+        assertEquals(List.of(kyoto.id()), pages.findByTitle("京都", 1).stream().map(Page::id).toList());
+    }
+
     private List<String> titles() throws Exception {
         return pages.listAlive().stream().map(Page::title).toList();
     }

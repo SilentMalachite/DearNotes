@@ -302,6 +302,37 @@ class PageEditorUiTest {
     }
 
     @Test
+    void pastedPageLinkStaysLinkedButPastedPlainTextDoesNot() throws Exception {
+        var p = pages.create(null, "リンク");
+        blocks.save(List.of(Block.empty(p.id(), BlockType.PARAGRAPH, 1024)
+            .withContent("京都", List.of(new Mark(0, 2, Mark.Style.PAGE, "x")))), List.of());
+        reopen(p.id());
+        focusEndOf(0);
+        fx(() -> {
+            current().area().selectRange(0, 2);
+            current().area().copy();
+            current().area().moveTo(2);
+            return null;
+        });
+        settle();
+        type(" ");
+        press(KeyCode.V, KeyMod.SHORTCUT);
+        assertEquals("京都 京都", fx(() -> current().block().text()));
+        assertEquals(List.of(new Mark(0, 2, Mark.Style.PAGE, "x"), new Mark(3, 5, Mark.Style.PAGE, "x")),
+            fx(() -> current().block().marks()));
+        fx(() -> {
+            var content = new javafx.scene.input.ClipboardContent();
+            content.putString("へ");
+            javafx.scene.input.Clipboard.getSystemClipboard().setContent(content);
+            return null;
+        });
+        press(KeyCode.V, KeyMod.SHORTCUT);
+        assertEquals("京都 京都へ", fx(() -> current().block().text()));
+        assertEquals(List.of(new Mark(0, 2, Mark.Style.PAGE, "x"), new Mark(3, 5, Mark.Style.PAGE, "x")),
+            fx(() -> current().block().marks()));
+    }
+
+    @Test
     void typingAtTheStartOfPageLinkIsNotLinked() throws Exception {
         var p = pages.create(null, "リンク");
         blocks.save(List.of(Block.empty(p.id(), BlockType.PARAGRAPH, 1024)

@@ -15,6 +15,7 @@ import javafx.scene.control.CheckBox;
 import javafx.scene.control.Label;
 import javafx.scene.control.Separator;
 import javafx.scene.input.Clipboard;
+import javafx.scene.input.DataFormat;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
 import javafx.scene.input.MouseEvent;
@@ -24,6 +25,7 @@ import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.StackPane;
 import org.fxmisc.richtext.StyleClassedTextArea;
+import org.fxmisc.richtext.model.ReadOnlyStyledDocument;
 
 /** ブロック1つ分の行。左からハンドル、記号（点・番号・チェック）、本文。 */
 final class BlockView extends HBox {
@@ -70,7 +72,7 @@ final class BlockView extends HBox {
     private final Label placeholder = new Label();
     private Block block;
     private boolean loading;
-    /** insertPageLink の最中。入れたリンクを unlink で外さないため。 */
+    /** insertPageLink や装飾ごとの貼り付けの最中。入れたリンクを unlink で外さないため。 */
     private boolean linking;
     private boolean composing;
     private boolean foldable;
@@ -400,6 +402,15 @@ final class BlockView extends HBox {
                 if (clip != null && clip.contains("\n") && block.type() != BlockType.CODE) {
                     host.pasteLines(this, clip);
                     e.consume();
+                } else if (styledClipboard()) {
+                    // コピーした装飾ごと貼るときは、ページへのリンクも貼ったまま残す
+                    linking = true;
+                    try {
+                        area.paste();
+                    } finally {
+                        linking = false;
+                    }
+                    e.consume();
                 }
                 return;
             }
@@ -465,6 +476,15 @@ final class BlockView extends HBox {
             }
             default -> { }
         }
+    }
+
+    /** クリップボードに、RichTextFX がコピーした装飾つきの文字があるか（ほかのアプリの文字は装飾なし）。 */
+    private boolean styledClipboard() {
+        return area.getStyleCodecs().map(codecs -> {
+            String name = ReadOnlyStyledDocument.codec(codecs._1, codecs._2, area.getSegOps()).getName();
+            DataFormat format = DataFormat.lookupMimeType(name);
+            return format != null && Clipboard.getSystemClipboard().hasContent(format);
+        }).orElse(false);
     }
 
     private boolean onFirstLine() {
