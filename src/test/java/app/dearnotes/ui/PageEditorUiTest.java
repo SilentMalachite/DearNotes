@@ -95,6 +95,14 @@ class PageEditorUiTest {
     }
 
     @Test
+    void windowHasTheAppIconInEverySize() throws Exception {
+        List<Double> widths = fx(() -> stage.getIcons().stream()
+            .peek(i -> assertFalse(i.isError(), "読めないアイコン"))
+            .map(javafx.scene.image.Image::getWidth).toList());
+        assertEquals(List.of(16.0, 32.0, 48.0, 64.0, 128.0, 256.0), widths);
+    }
+
+    @Test
     void markdownShortcutsAndEnterBuildAList() throws Exception {
         focusFirstBlock();
         type("# Weekend");
