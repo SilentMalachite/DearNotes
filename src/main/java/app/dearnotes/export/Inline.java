@@ -194,7 +194,7 @@ final class Inline {
                 while (start < end && Character.isWhitespace(text.charAt(start))) start++;
                 while (end > start && Character.isWhitespace(text.charAt(end - 1))) end--;
             }
-            if (start < end) out.add(new Mark(start, end, m.style()));
+            if (start < end) out.add(m.withRange(start, end));
         }
         return out;
     }
@@ -259,7 +259,7 @@ final class Inline {
             case BOLD -> "**";
             case ITALIC -> "*";
             case STRIKE -> "~~";
-            case CODE, LINK -> "";
+            case CODE, LINK, PAGE -> "";
         };
     }
 
@@ -269,7 +269,7 @@ final class Inline {
             case BOLD -> "strong";
             case ITALIC -> "em";
             case STRIKE -> "del";
-            case CODE, LINK -> throw new IllegalArgumentException(s.name());
+            case CODE, LINK, PAGE -> throw new IllegalArgumentException(s.name());
         };
         return open ? "<" + name + ">" : "</" + name + ">";
     }

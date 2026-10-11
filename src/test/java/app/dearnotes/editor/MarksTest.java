@@ -37,4 +37,25 @@ class MarksTest {
         var right = Marks.slice(marks, 5, 10);
         assertEquals(Marks.normalize(marks), Marks.concat(left, 5, right));
     }
+
+    @Test
+    void adjacentLinksToDifferentPagesStaySeparate() {
+        var a = new Mark(0, 2, PAGE, "a");
+        var b = new Mark(2, 4, PAGE, "b");
+        assertEquals(List.of(a, b), Marks.normalize(List.of(b, a)));
+        assertEquals(List.of(new Mark(0, 4, PAGE, "a")), Marks.normalize(List.of(a, new Mark(2, 4, PAGE, "a"))));
+    }
+
+    @Test
+    void sliceAndConcatKeepTheTarget() {
+        var link = new Mark(1, 5, PAGE, "p");
+        assertEquals(List.of(new Mark(0, 2, PAGE, "p")), Marks.slice(List.of(link), 3, 8));
+        assertEquals(List.of(new Mark(4, 8, PAGE, "p")), Marks.concat(List.of(), 3, List.of(link)));
+    }
+
+    @Test
+    void pageNeedsTargetAndOtherStylesMustNotHaveOne() {
+        assertThrows(IllegalArgumentException.class, () -> new Mark(0, 1, PAGE));
+        assertThrows(IllegalArgumentException.class, () -> new Mark(0, 1, BOLD, "x"));
+    }
 }
