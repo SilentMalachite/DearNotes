@@ -335,6 +335,27 @@ class PageEditorUiTest {
     }
 
     @Test
+    void backlinksListPagesThatLinkHereAndOpenTheRow() throws Exception {
+        var kyoto = pages.create(null, "京都");
+        var trip = pages.create(null, "旅行");
+        Block b = Block.empty(trip.id(), BlockType.PARAGRAPH, 1024)
+            .withContent("次は京都へ", List.of(new Mark(2, 4, Mark.Style.PAGE, kyoto.id())));
+        blocks.save(List.of(b), List.of());
+        reopen(kyoto.id());
+        assertEquals(List.of("📝 旅行"), fx(() -> window.editor().backlinks().titles()));
+        assertTrue(fx(() -> window.editor().backlinks().isVisible()));
+
+        fx(() -> {
+            window.editor().backlinks().open(0);
+            return null;
+        });
+        settle();
+        assertEquals(trip.id(), fx(() -> window.editor().page().id()));
+        assertEquals(b.id(), fx(() -> current().block().id()));
+        assertFalse(fx(() -> window.editor().backlinks().isVisible()));
+    }
+
+    @Test
     void deleteOnDividerRemovesItAndKeepsNextBlock() throws Exception {
         focusFirstBlock();
         type("---");

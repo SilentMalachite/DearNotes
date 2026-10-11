@@ -57,6 +57,7 @@ final class PageEditor extends VBox implements BlockView.Host {
     private final List<BlockView> views = new ArrayList<>();
     private final SlashMenu slash = new SlashMenu(this::applySlash);
     private final PageLinkMenu links = new PageLinkMenu(this::applyPageLink);
+    private final Backlinks backlinks;
     private final PauseTransition renameLater = new PauseTransition(Duration.millis(300));
     private ScrollPane scrollPane;
     private Page page;
@@ -68,6 +69,7 @@ final class PageEditor extends VBox implements BlockView.Host {
     PageEditor(Services services, Navigator nav) {
         this.s = services;
         this.nav = nav;
+        this.backlinks = new Backlinks(b -> nav.openPage(b.pageId(), b.blockId()));
         getStyleClass().add("page-editor");
 
         iconButton.getStyleClass().add("page-icon");
@@ -96,7 +98,7 @@ final class PageEditor extends VBox implements BlockView.Host {
         filler.setMinHeight(160);
         filler.setOnMouseClicked(e -> clickBelowLastBlock());
 
-        getChildren().addAll(new HBox(8, iconButton), title, blockBox, filler);
+        getChildren().addAll(new HBox(8, iconButton), title, blockBox, backlinks, filler);
     }
 
     void setScrollPane(ScrollPane scrollPane) {
@@ -109,6 +111,10 @@ final class PageEditor extends VBox implements BlockView.Host {
 
     List<BlockView> views() {
         return List.copyOf(views);
+    }
+
+    Backlinks backlinks() {
+        return backlinks;
     }
 
     /** 見出しや並び、カーソルのある節が変わったときに呼ぶ。目次を作り直すため。 */
@@ -181,6 +187,8 @@ final class PageEditor extends VBox implements BlockView.Host {
             s.saver().changed(first);
         }
         refreshLayout(false);
+        String pageId = page.id();
+        backlinks.show(Errors.get("このページへのリンクを読む", () -> s.blocks().linksTo(pageId)).orElse(List.of()));
         if (scrollPane != null) scrollPane.setVvalue(0);
 
         Page opened = page;
