@@ -59,7 +59,7 @@ JDK 25 が要ります。JavaFX は Gradle が取ってくるので、JavaFX 入
 
 - jpackage は他の OS 向けには作れません。各 OS で実行してください
 - Windows では WiX Toolset が要ります（`dotnet tool install --global wix`）
-- アイコンを付けるときは `packaging/mac/DearNotes.icns` と `packaging/win/DearNotes.ico` を置きます
+- アイコンは `packaging/mac/DearNotes.icns`（macOS）と `packaging/win/DearNotes.ico`（Windows）を使います。ウィンドウのアイコンは `src/main/resources/app/dearnotes/icon-*.png` です。絵を変えるときは `packaging/icon/build-icons.py` を直し、macOS で `python3 packaging/icon/build-icons.py` を実行して全部を作り直します（`brew install librsvg imagemagick` が要ります）
 - 版は `build.gradle.kts` の `version` で決まります。Windows の `--win-upgrade-uuid` は変えないでください（新しい版が古い版を置き換えるのに使います）
 
 ### リリースする

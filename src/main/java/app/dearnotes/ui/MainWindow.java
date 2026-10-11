@@ -20,6 +20,7 @@ import javafx.scene.control.Button;
 import javafx.scene.control.Label;
 import javafx.scene.control.ScrollPane;
 import javafx.scene.control.SplitPane;
+import javafx.scene.image.Image;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyCodeCombination;
 import javafx.scene.input.KeyCombination;
@@ -39,6 +40,7 @@ public final class MainWindow implements Sidebar.Actions {
     private static final String LAST_PAGE = System.getProperty("dearnotes.dataDir") == null
         ? "lastPageId" : "lastPageId@" + Integer.toHexString(System.getProperty("dearnotes.dataDir").hashCode());
     private static final String EXPORT_DIR = "exportDir";
+    private static final List<Integer> ICON_SIZES = List.of(16, 32, 48, 64, 128, 256);
 
     private final Services s;
     private final Stage stage;
@@ -106,6 +108,7 @@ public final class MainWindow implements Sidebar.Actions {
             });
         stage.setScene(scene);
         stage.setTitle("DearNotes");
+        stage.getIcons().setAll(icons());
         stage.setMinWidth(640);
         stage.setMinHeight(400);
 
@@ -113,6 +116,15 @@ public final class MainWindow implements Sidebar.Actions {
         stage.setOnCloseRequest(e -> {
             if (!flushAll()) e.consume();
         });
+    }
+
+    /** ウィンドウのアイコン（Windows のタイトルバーとタスクバー）。packaging/icon/build-icons.py が作る。 */
+    static List<Image> icons() {
+        return ICON_SIZES.stream()
+            .map(px -> MainWindow.class.getResource("/app/dearnotes/icon-" + px + ".png"))
+            .filter(java.util.Objects::nonNull)
+            .map(url -> new Image(url.toExternalForm()))
+            .toList();
     }
 
     /**
