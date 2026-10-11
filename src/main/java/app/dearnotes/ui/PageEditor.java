@@ -95,17 +95,27 @@ final class PageEditor extends VBox implements BlockView.Host {
     }
 
     /**
-     * ページを開く。開く前に書きかけの変更を DB に入れておく。
-     * 書けなかったら、DB の古い本文で上書きしないよう今のページのままにして false。
+     * ほかのページへ移る前に、名前と書きかけの変更を DB に入れる。
+     * 書けなかったら知らせて false。そのときはページを作ったり戻したりもしない。
      */
-    boolean open(Page p, String focusBlockId) {
+    boolean flushBeforeLeaving() {
         saveTitle();
         slash.hide();
-        if (!s.saver().flushAndWait(3, TimeUnit.SECONDS) && page != null) {
-            Errors.warn("保存できていない変更があります",
-                "いまのページの変更をまだ保存できていないので、ページを切り替えませんでした。少し待ってからもう一度開いてください。");
-            return false;
-        }
+        if (s.saver().flushAndWait(3, TimeUnit.SECONDS) || page == null) return true;
+        Errors.warn("保存できていない変更があります",
+            "いまのページの変更をまだ保存できていないので、ページを切り替えませんでした。少し待ってからもう一度開いてください。");
+        return false;
+    }
+
+    /**
+     * ページを開く。開く前に書きかけの変更を DB に入れておく。
+     * 書けなかったり、開くページを読めなかったりしたら、今のページのままにして false。
+     */
+    boolean open(Page p, String focusBlockId) {
+        if (!flushBeforeLeaving()) return false;
+        // 読めなかったときは、今のページを消さずに残す（空の行で中身を上書きしないように）
+        var loaded = Errors.get("ページを開く", () -> s.blocks().listByPage(p.id()));
+        if (loaded.isEmpty()) return false;
         // 開く前に書いた名前を反映させるため、読み直す
         String id = p.id();
         this.page = Errors.get("ページを読む", () -> s.pages().get(id).orElse(null)).orElse(p);
@@ -114,10 +124,8 @@ final class PageEditor extends VBox implements BlockView.Host {
         loadingTitle = false;
         iconButton.setText(page.displayIcon());
 
-        var loaded = Errors.get("ページを開く", () -> s.blocks().listByPage(page.id()));
         views.clear();
         blockBox.getChildren().clear();
-        if (loaded.isEmpty()) return true;   // 読めなかったときは空の行を足さない（中身を上書きしないように）
         for (Block b : loaded.get()) addView(views.size(), b);
         if (views.isEmpty()) {
             Block first = Block.empty(page.id(), BlockType.PARAGRAPH, SortKeys.GAP);

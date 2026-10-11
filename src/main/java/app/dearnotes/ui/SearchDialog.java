@@ -63,7 +63,13 @@ final class SearchDialog {
             }
         });
         results.setOnMouseClicked(e -> {
-            if (e.getClickCount() >= 1) openSelected();
+            // 語句を変えた直後の古い結果は開かず、探し直すだけにする
+            if (!field.getText().equals(searchedQuery)) {
+                debounce.stop();
+                runSearch();
+            } else if (e.getClickCount() >= 1) {
+                openSelected();
+            }
         });
 
         field.setOnKeyPressed(e -> {
@@ -110,6 +116,10 @@ final class SearchDialog {
 
     TextField field() {
         return field;
+    }
+
+    ListView<Hit> results() {
+        return results;
     }
 
     void show() {

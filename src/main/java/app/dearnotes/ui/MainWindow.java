@@ -154,6 +154,8 @@ public final class MainWindow implements Sidebar.Actions {
 
     @Override
     public void openToday() {
+        // 移れないときに日記を作ったりゴミ箱から戻したりしないよう、先に保存する
+        if (!editor.flushBeforeLeaving()) return;
         Errors.get("今日の日記を開く", () -> s.pages().openDaily(LocalDate.now())).ifPresent(p -> {
             sidebar.reload(p.id());
             open(p);
@@ -162,6 +164,7 @@ public final class MainWindow implements Sidebar.Actions {
 
     @Override
     public void newPage(String parentId) {
+        if (!editor.flushBeforeLeaving()) return;
         Errors.get("ページを作る", () -> s.pages().create(parentId, "")).ifPresent(p -> {
             sidebar.reload(p.id());
             if (open(p, null)) editor.focusTitle();

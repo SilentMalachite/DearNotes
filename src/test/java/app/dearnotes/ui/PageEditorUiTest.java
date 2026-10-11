@@ -298,6 +298,72 @@ class PageEditorUiTest {
     }
 
     @Test
+    void failedFlushDoesNotCreateOrRestorePages() throws Exception {
+        focusFirstBlock();
+        type("AB");
+        assertTrue(saver.flushAndWait(2, TimeUnit.SECONDS));
+        int before = pages.listAlive().size();
+
+        failSaves = true;
+        type("C");
+        fx(() -> {
+            window.newPage(null);
+            window.openToday();
+            return null;
+        });
+        settle();
+        // 切り替えられないときは、新しいページも今日の日記も作らない
+        assertEquals(before, pages.listAlive().size());
+        assertEquals(List.of("paragraph:0:ABC"), summary());
+    }
+
+    @Test
+    void failedBlockReadKeepsCurrentPage() throws Exception {
+        focusFirstBlock();
+        type("AB");
+        assertTrue(saver.flushAndWait(2, TimeUnit.SECONDS));
+        String pageId = fx(() -> window.editor().page().id());
+        var other = pages.create(null, "別のページ");
+        db.write(c -> {
+            try (var st = c.createStatement()) {
+                return st.executeUpdate("ALTER TABLE blocks RENAME TO blocks_gone");
+            }
+        });
+
+        fx(() -> {
+            window.open(other);
+            return null;
+        });
+        settle();
+        assertEquals(pageId, fx(() -> window.editor().page().id()));
+        assertEquals(List.of("paragraph:0:AB"), summary());
+    }
+
+    @Test
+    void clickingStaleSearchResultDoesNotOpenIt() throws Exception {
+        pages.create(null, "東京メモ");
+        var opened = new java.util.ArrayList<String>();
+        var dialog = fx(() -> new SearchDialog(stage, services, h -> opened.add(h.pageId())));
+        fx(() -> {
+            dialog.field().setText("東京");
+            dialog.show();
+            return null;
+        });
+        settle();
+        fx(() -> {
+            // 待ち時間（120ms）が過ぎる前に、古い結果の行を押す
+            dialog.field().setText("大阪");
+            dialog.results().fireEvent(new javafx.scene.input.MouseEvent(
+                javafx.scene.input.MouseEvent.MOUSE_CLICKED, 0, 0, 0, 0,
+                javafx.scene.input.MouseButton.PRIMARY, 1,
+                false, false, false, false, true, false, false, false, false, false, null));
+            return null;
+        });
+        settle();
+        assertEquals(List.of(), opened);
+    }
+
+    @Test
     void pastingLinesEndingWithDividerKeepsTailVisible() throws Exception {
         focusFirstBlock();
         type("AB");
