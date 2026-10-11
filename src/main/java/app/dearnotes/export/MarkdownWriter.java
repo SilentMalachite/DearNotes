@@ -20,6 +20,11 @@ public final class MarkdownWriter {
     private MarkdownWriter() {}
 
     public static String write(Page page, List<Block> blocks) {
+        return write(page, blocks, Links.NONE);
+    }
+
+    /** links はページへのリンクの行き先。行き先のないページへのリンクは、ふだんの文字にする。 */
+    public static String write(Page page, List<Block> blocks, Links links) {
         var out = new StringBuilder();
         headingBody(out, "# ", Inline.escape(page.displayTitle().replace('\n', ' ')).strip());
         // 段ごとに、その段の最後の行の子を置く桁。-1 はまだない
@@ -52,25 +57,25 @@ public final class MarkdownWriter {
             // 子の行を置く桁は、リストの項目なら記号の後ろ
             int width = 0;
             switch (b.type()) {
-                case PARAGRAPH -> text(out, pad, "", "", b);
-                case H1 -> heading(out, pad, "# ", b);
-                case H2 -> heading(out, pad, "## ", b);
-                case H3 -> heading(out, pad, "### ", b);
+                case PARAGRAPH -> text(out, pad, "", "", b, links);
+                case H1 -> heading(out, pad, "# ", b, links);
+                case H2 -> heading(out, pad, "## ", b, links);
+                case H3 -> heading(out, pad, "### ", b, links);
                 case BULLET -> {
-                    text(out, pad, "- ", "  ", b);
+                    text(out, pad, "- ", "  ", b, links);
                     width = 2;
                 }
                 case NUMBERED -> {
                     String marker = BlockOps.listNumber(blocks, i) + ". ";
                     width = marker.length();
-                    text(out, pad, marker, " ".repeat(width), b);
+                    text(out, pad, marker, " ".repeat(width), b, links);
                 }
                 case TODO -> {
                     // 「[ ] 」は項目の文字の側なので、子は「- 」の後ろにそろえる
-                    text(out, pad, b.checked() ? "- [x] " : "- [ ] ", "  ", b);
+                    text(out, pad, b.checked() ? "- [x] " : "- [ ] ", "  ", b, links);
                     width = 2;
                 }
-                case QUOTE -> text(out, pad, "> ", "> ", b);
+                case QUOTE -> text(out, pad, "> ", "> ", b, links);
                 case CODE -> fence(out, pad, b.text());
                 case DIVIDER -> line(out, pad + "---");
             }
@@ -82,8 +87,8 @@ public final class MarkdownWriter {
     }
 
     /** 文字のあるブロック。2行目からは continuation を前に付け、行末の \ で改行する。 */
-    private static void text(StringBuilder out, String pad, String marker, String continuation, Block b) {
-        String[] lines = trimNewlines(Inline.write(b.text(), b.marks())).split("\n", -1);
+    private static void text(StringBuilder out, String pad, String marker, String continuation, Block b, Links links) {
+        String[] lines = trimNewlines(Inline.write(b.text(), b.marks(), links)).split("\n", -1);
         for (int j = 0; j < lines.length; j++) {
             String lead = pad + (j == 0 ? marker : continuation);
             if (j == lines.length - 1) {
@@ -110,8 +115,8 @@ public final class MarkdownWriter {
         return false;
     }
 
-    private static void heading(StringBuilder out, String pad, String marker, Block b) {
-        headingBody(out, pad + marker, trimNewlines(Inline.write(b.text(), b.marks())).replace('\n', ' '));
+    private static void heading(StringBuilder out, String pad, String marker, Block b, Links links) {
+        headingBody(out, pad + marker, trimNewlines(Inline.write(b.text(), b.marks(), links)).replace('\n', ' '));
     }
 
     /** 見出しの1行。行頭と末尾の # が、見出しの記号と読まれないようにする。 */
