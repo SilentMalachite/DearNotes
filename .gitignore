@@ -7,3 +7,4 @@ build/
 .claude/scheduled_tasks.lock
 .serena/
 bin/
+docs/review/
