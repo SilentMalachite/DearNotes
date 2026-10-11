@@ -1,0 +1,516 @@
+<!doctype html>
+<html lang="ja">
+<meta charset="utf-8">
+<title>Outline and Folding</title>
+<link rel="stylesheet" href="htmlplan.css">
+<script src="htmlplan.js" defer></script>
+<style data-mock-shared>
+  .ui { font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic UI", "Segoe UI", sans-serif; color: #37352f; background: #fff; border: 1px solid #e3e2de; border-radius: 10px; overflow: hidden; }
+  .ui .bar { display: flex; justify-content: space-between; align-items: center; padding: 7px 14px; border-bottom: 1px solid #efeeea; font-size: 12.5px; color: #8a877f; }
+  .ui .btn { border: 1px solid #e3e2de; border-radius: 6px; padding: 2px 8px; color: #37352f; background: #fff; }
+  .ui .two { display: grid; grid-template-columns: 1fr 150px; }
+  .ui .page { padding: 12px 18px 16px; }
+  .ui h2 { font-size: 20px; margin: 0 0 6px; font-weight: 700; }
+  .ui .b { padding: 2px 0; }
+  .ui .hh { font-size: 16px; font-weight: 700; margin-top: 8px; }
+  .ui .hs { font-size: 14.5px; font-weight: 700; margin-top: 4px; }
+  .ui .bul::before { content: "•  "; } .ui .bul2::before { content: "◦  "; }
+  .ui .fd { display: inline-block; width: 18px; color: #9b9a97; font-weight: 400; }
+  .ui .in1 { padding-left: 18px; } .ui .in2 { padding-left: 42px; }
+  .ui .folded { background: #f7f6f3; border-radius: 4px; }
+  .ui .cur { border-left: 2px solid #2383e2; padding-left: 4px; color: #b9b7b1; }
+  .ui .ol { border-left: 1px solid #efeeea; background: #fbfbfa; padding: 10px 8px; font-size: 12.5px; }
+  .ui .ol .ot { color: #9b9a97; font-size: 11.5px; padding: 0 6px 6px; }
+  .ui .ol .oi { padding: 3px 6px; border-radius: 4px; } .ui .ol .oi.l2 { padding-left: 18px; color: #5f5e5a; }
+  .ui .ol .oi.on { background: #e9e8e4; font-weight: 600; }
+  .ui .dim { color: #9b9a97; }
+</style>
+<body>
+
+<header>
+  <h1>DearNotes のアウトラインと折りたたみ</h1>
+  <doc-changes new="3" changed="11"></doc-changes>
+  <details class="thread"><summary>Why · 1 request</summary>
+    <doc-quote via="prompt" from="the user">DearNotesにアウトライン機能をつけたい。また文章や項目の折りたたみ機能をつけたい。</doc-quote>
+  </details>
+</header>
+
+<main>
+<doc-plan>
+
+<!-- ═════ 1 ═════ -->
+<doc-claim>
+  <p>ユーザーは右の目次で見出しを見て、押すとその見出しへ移る。</p>
+  <doc-mock frame="none" w="480"><template>
+<div class="ui">
+  <div class="bar"><span>旅行 / 京都旅行</span><span class="btn" data-ref="btn">☰ 目次</span></div>
+  <div class="two">
+    <div class="page">
+      <h2>京都旅行</h2>
+      <div class="hh">持ち物</div>
+      <div class="b bul">充電器</div>
+      <div class="hh">1日目</div>
+      <div class="hs">午前</div>
+      <div class="b">伏見稲荷へ行く</div>
+      <div class="hs">午後</div>
+      <div class="b">清水寺から祇園まで歩く</div>
+    </div>
+    <div class="ol" data-ref="ol">
+      <div class="ot">目次</div>
+      <div class="oi">持ち物</div>
+      <div class="oi on" data-ref="on">1日目</div>
+      <div class="oi l2">午前</div>
+      <div class="oi l2">午後</div>
+      <div class="oi">2日目</div>
+    </div>
+  </div>
+</div></template>
+    <doc-pin ref="btn" anchor="bl" title="出し入れ">Cmd/Ctrl+Shift+O でも同じ。</doc-pin>
+    <doc-pin ref="on" anchor="r" title="カーソルのある節">太字で示す。</doc-pin>
+  </doc-mock>
+  <doc-ask id="place">
+    <p>目次をどこに出しますか？</p>
+    <label><input type="radio" name="place" value="right" checked> 本文の右のパネル <small>初めは閉じておく</small></label>
+    <label><input type="radio" name="place" value="sidebar"> サイドバーのページ一覧の下 <small>本文の幅が変わらない</small></label>
+    <label><input type="radio" name="place" value="popup"> ボタンで開く小さな窓 <small>押した後で閉じる</small></label>
+  </doc-ask>
+
+  <doc-claim>
+    <p>目次は H1〜H3 を段ごとに字下げして並べる。</p>
+    <doc-calls title="目次を作る" caption="並びが変わるたびに、ブロックの並びから作り直す。">
+<script type="text/plain">
+~ PageEditor.refreshNumbers() → **refreshLayout**()        @ src/main/java/app/dearnotes/ui/PageEditor.java:528
++   **Outline.headings**(blocks)                          @ src/main/java/app/dearnotes/editor/Outline.java:40
++   onOutlineChanged.accept(headings, current)
++     **OutlinePanel.show**(headings, current)            @ src/main/java/app/dearnotes/ui/OutlinePanel.java:30
+~ PageEditor.edited(v)                                    @ src/main/java/app/dearnotes/ui/PageEditor.java:175   -- 見出しの文字が変わったときも作り直す
+~ PageEditor.focused(v)                                   @ src/main/java/app/dearnotes/ui/PageEditor.java:401   -- 太字の項目を変える
+</script>
+    </doc-calls>
+    <doc-claim at="src/main/java/app/dearnotes/ui/PageEditor.java:528">
+      <p><b>PageEditor.java:528</b> · refreshLayout()</p>
+      <doc-code title="PageEditor.java · sketch" lang="java" start="527">
+<script type="text/plain">
+/** 番号、▸▾、隠す行、目次を、いまの並びに合わせる。 */
+private void refreshLayout() {
+    List<Block> blocks = blocks();
+    boolean[] hidden = Outline.hidden(blocks);
+    for (int i = 0; i < views.size(); i++) {
+        BlockView v = views.get(i);
+        Block b = blocks.get(i);
+        if (b.type() == BlockType.NUMBERED) v.setListNumber(BlockOps.listNumber(blocks, i));
+        v.setFoldState(Outline.hasChildren(blocks, i), b.collapsed());
+        v.setVisible(!hidden[i]);
+        v.setManaged(!hidden[i]);
+    }
+    onOutlineChanged.accept(Outline.headings(blocks), currentHeadingId());
+}
+</script>
+        <doc-pin line="528" title="今の refreshNumbers() の呼び出し元をそのまま使う"></doc-pin>
+      </doc-code>
+    </doc-claim>
+  </doc-claim>
+
+  <doc-claim>
+    <p>目次の項目を押すと、畳んだ親を開いてから移る。</p>
+    <doc-calls title="見出しへ移る" caption="検索の結果から開くときも、同じ reveal() を通る。">
+<script type="text/plain">
++ OutlinePanel の項目をクリック                         @ src/main/java/app/dearnotes/ui/OutlinePanel.java:52
++   **PageEditor.reveal**(blockId)                       @ src/main/java/app/dearnotes/ui/PageEditor.java:170
++     **Outline.foldersOf**(blocks, blockId)              @ src/main/java/app/dearnotes/editor/Outline.java:55
++     change(folder, folder.withCollapsed(false))
++     v.focusEnd(); ensureVisible(v)
+
+~ MainWindow.openHit(hit)                                 @ src/main/java/app/dearnotes/ui/MainWindow.java:203
+~   PageEditor.open(page, blockId)                        @ src/main/java/app/dearnotes/ui/PageEditor.java:139   -- focusEnd の代わりに reveal を呼ぶ
+</script>
+    </doc-calls>
+  </doc-claim>
+
+  <doc-claim>
+    <p>MainWindow は目次を本文の右に置き、Cmd/Ctrl+Shift+O で出し入れする。</p>
+    <doc-code diff file="src/main/java/app/dearnotes/ui/MainWindow.java" lang="java" start="64">
+<script type="text/plain">
+@@ -64,14 +64,20 @@
+         var main = new BorderPane(scroll);
+         main.setTop(header);
++        outline.setVisible(prefs.getBoolean(OUTLINE_VISIBLE, false));
++        outline.managedProperty().bind(outline.visibleProperty());
++        main.setRight(outline);
++        editor.setOnOutlineChanged(outline::show);
+         var split = new SplitPane(sidebar, main);
+         split.setDividerPositions(0.24);
+         SplitPane.setResizableWithParent(sidebar, false);
+         sidebar.setMinWidth(180);
+
+         var scene = new Scene(split, 1100, 720);
+         scene.getStylesheets().add(MainWindow.class.getResource("dearnotes.css").toExternalForm());
+         scene.getAccelerators().put(new KeyCodeCombination(KeyCode.K, KeyCombination.SHORTCUT_DOWN), this::showSearch);
+         scene.getAccelerators().put(new KeyCodeCombination(KeyCode.N, KeyCombination.SHORTCUT_DOWN), () -> newPage(null));
+         scene.getAccelerators().put(
+             new KeyCodeCombination(KeyCode.D, KeyCombination.SHORTCUT_DOWN, KeyCombination.SHIFT_DOWN), this::openToday);
++        scene.getAccelerators().put(
++            new KeyCodeCombination(KeyCode.O, KeyCombination.SHORTCUT_DOWN, KeyCombination.SHIFT_DOWN), this::toggleOutline);
+         stage.setScene(scene);
+</script>
+      <doc-pin line="66" title="開いているかは Preferences に覚える">ヘッダーの「☰ 目次」ボタンは 50 行目に足す。</doc-pin>
+    </doc-code>
+  </doc-claim>
+</doc-claim>
+
+<!-- ═════ 2 ═════ -->
+<doc-claim>
+  <p>ユーザーは見出しを畳み、その節の行を隠せる。</p>
+  <doc-machine name="fold" caption="状態を押すと、その状態の画面が出る。">
+<script type="text/plain">
+machine fold initial open
+state open     # 見出しの下の行が見える。
+state folded   # 見出しだけが見える。
+
+| open | folded |
+
+open   -fold->   folded : ▾ / Cmd+Enter
+folded -unfold-> open   : ▸ / 目次 / 検索
+</script>
+    <div data-state="open"><doc-mock frame="none" w="400"><template>
+<div class="ui"><div class="page">
+  <div class="hh"><span class="fd">▾</span>1日目</div>
+  <div class="b in1">伏見稲荷へ行く</div>
+  <div class="b in1 bul">お昼は錦市場</div>
+  <div class="b in1">清水寺から祇園まで歩く</div>
+  <div class="hh"><span class="fd">▾</span>2日目</div>
+  <div class="b in1">嵐山</div>
+</div></div></template></doc-mock></div>
+    <div data-state="folded"><doc-mock frame="none" w="400"><template>
+<div class="ui"><div class="page">
+  <div class="hh folded"><span class="fd">▸</span>1日目</div>
+  <div class="hh"><span class="fd">▾</span>2日目</div>
+  <div class="b in1">嵐山</div>
+</div></div></template></doc-mock></div>
+  </doc-machine>
+
+  <doc-claim>
+    <p>見出しの節は、同じか上の段の見出しの手前で終わる。</p>
+    <doc-code title="OutlineTest.java · sketch" lang="java">
+<script type="text/plain">
+@Test
+void headingHidesUntilNextHeadingOfSameOrHigherLevel() {
+    var bs = page(h1("1日目"), p("伏見稲荷"), h2("午後"), p("清水寺"), h1("2日目"));
+    assertEquals(4, Outline.sectionEnd(bs, 0));   // 「2日目」の手前まで
+    assertEquals(4, Outline.sectionEnd(bs, 2));   // H2 も次の H1 で終わる
+}
+
+@Test
+void headingSectionStopsAtShallowerIndent() {
+    var bs = page(bullet("旅行", 0), h3("持ち物", 1), p("充電器", 1), p("予算", 0));
+    assertEquals(3, Outline.sectionEnd(bs, 1));   // 親の項目の外へは広がらない
+}
+</script>
+      <doc-pin line="11" title="字下げした見出しは、親の項目の中で終わる"></doc-pin>
+    </doc-code>
+  </doc-claim>
+
+  <doc-claim>
+    <p>▸▾ を押すか Cmd/Ctrl+Enter で、その行を畳む・開く。</p>
+    <doc-calls title="畳む" caption="BlockView は押されたことを伝えるだけ。隠すのは PageEditor。">
+<script type="text/plain">
++ BlockView の **fold** ラベルをクリック                 @ src/main/java/app/dearnotes/ui/BlockView.java:98
+~ BlockView.onKeyPressed(Cmd/Ctrl+Enter)                 @ src/main/java/app/dearnotes/ui/BlockView.java:279
++   Host.**toggleFold**(v)                               @ src/main/java/app/dearnotes/ui/BlockView.java:49
++     PageEditor.toggleFold(v)                           @ src/main/java/app/dearnotes/ui/PageEditor.java:419
++       change(v, b.withCollapsed(!b.collapsed()))       @ src/main/java/app/dearnotes/ui/PageEditor.java:428
++         refreshLayout()                                @ src/main/java/app/dearnotes/ui/PageEditor.java:528
+</script>
+    </doc-calls>
+    <doc-ask id="key">
+      <p>畳む・開くキーはどれにしますか？</p>
+      <label><input type="radio" name="key" value="enter" checked> Cmd/Ctrl+Enter <small>Notion と同じ。いまは何もしないキー</small></label>
+      <label><input type="radio" name="key" value="period"> Cmd/Ctrl+. </label>
+      <label><input type="radio" name="key" value="none"> キーはなし <small>▸▾ を押すだけ</small></label>
+    </doc-ask>
+    <doc-claim at="src/main/java/app/dearnotes/ui/BlockView.java:98">
+      <p><b>BlockView.java:98</b> · fold</p>
+      <doc-code title="BlockView.java · sketch" lang="java">
+<script type="text/plain">
+// 字下げの後、記号の前に ▸▾ を置く。子のない行では場所だけ取る
+private final Label fold = new Label();
+
+fold.getStyleClass().add("block-fold");
+fold.setOnMouseClicked(e -> {
+    host.toggleFold(this);
+    e.consume();
+});
+getChildren().addAll(handle, indentSpacer, fold, gutter, content);
+
+/** PageEditor が並びを見て呼ぶ。 */
+void setFoldState(boolean hasChildren, boolean collapsed) {
+    fold.setText(!hasChildren ? "" : collapsed ? "▸" : "▾");
+    getStyleClass().remove("folded");
+    if (hasChildren && collapsed) getStyleClass().add("folded");
+}
+</script>
+        <doc-pin line="13" title="▾ はマウスを乗せたときだけ見せる">CSS で決める。▸ はいつも見せる。</doc-pin>
+      </doc-code>
+    </doc-claim>
+  </doc-claim>
+</doc-claim>
+
+<!-- ═════ 3 ═════ -->
+<doc-claim>
+  <p>ユーザーは子の行を持つ項目を畳み、字下げした子の行を隠せる。</p>
+  <doc-mock frame="none" w="400"><template>
+<div class="ui"><div class="page">
+  <div class="b folded" data-ref="buy"><span class="fd">▸</span><span class="bul">買い物</span></div>
+  <div class="b"><span class="fd">▾</span><span class="bul">読む本</span></div>
+  <div class="b in2 bul2">古都</div>
+  <div class="b in2 bul2">檸檬</div>
+  <div class="b" data-ref="none"><span class="fd"></span><span class="bul">電池を替える</span></div>
+</div></div></template>
+    <doc-pin ref="buy" anchor="r" title="子の 3 行が隠れている"></doc-pin>
+    <doc-pin ref="none" anchor="r" title="子がない行に ▸▾ は出ない"></doc-pin>
+  </doc-mock>
+  <doc-ask id="scope">
+    <p>どの行を畳めるようにしますか？</p>
+    <label><input type="radio" name="scope" value="any" checked> 子の行を持つ行すべて <small>箇条書き、ToDo、段落も畳める</small></label>
+    <label><input type="radio" name="scope" value="toggle"> 新しい「トグル」ブロックだけ <small>種類を 1 つ足す。表を作り直す</small></label>
+    <label><input type="radio" name="scope" value="headings"> 見出しだけ <small>claim 3 goes</small></label>
+  </doc-ask>
+  <div data-if="scope=toggle"><doc-note tone="warn"><strong>表の作り直し</strong> blocks の CHECK 制約は ALTER で変えられない。v2 で blocks を作り直し、FTS のトリガーも作り直す。</doc-note></div>
+
+  <doc-claim>
+    <p>項目の範囲は、字下げの深い行が続くところまでとする。</p>
+    <doc-code title="OutlineTest.java · sketch" lang="java">
+<script type="text/plain">
+@Test
+void itemHidesDeeperIndentedLines() {
+    var bs = page(bullet("読む本", 0), bullet("古都", 1), todo("檸檬", 2), bullet("電池", 0));
+    assertEquals(3, Outline.sectionEnd(bs, 0));   // 字下げ 0 の「電池」の手前まで
+    assertTrue(Outline.hasChildren(bs, 0));
+    assertFalse(Outline.hasChildren(bs, 3));      // 子がないので ▸▾ を出さない
+}
+</script>
+    </doc-code>
+  </doc-claim>
+
+  <doc-claim>
+    <p>子をなくした行は、畳んだ印を自分で外す。</p>
+    <doc-code title="PageEditor.java · sketch" lang="java">
+<script type="text/plain">
+// refreshLayout() の中。子がないのに畳んだままだと、Tab で入れた行がすぐ隠れる
+if (b.collapsed() && !Outline.hasChildren(blocks, i)) {
+    v.setBlock(b.withCollapsed(false));
+    s.saver().changed(v.block());
+}
+</script>
+    </doc-code>
+  </doc-claim>
+</doc-claim>
+
+<!-- ═════ 4 ═════ -->
+<doc-claim>
+  <p>畳んだ状態は、ページを開き直しても残る。</p>
+  <doc-code diff file="src/main/java/app/dearnotes/db/Migrations.java" lang="java" start="56">
+<script type="text/plain">
+@@ -56,5 +56,9 @@
+               INSERT INTO blocks_fts(blocks_fts, rowid, text) VALUES ('delete', old.rowid, old.text);
+               INSERT INTO blocks_fts(rowid, text) VALUES (new.rowid, new.text);
+             END"""
+-        )
++        ),
++        // v2: 畳んだブロック
++        List.of(
++            "ALTER TABLE blocks ADD COLUMN collapsed INTEGER NOT NULL DEFAULT 0"
++        )
+     );
+</script>
+    <doc-pin line="62" title="今のデータは全部「開いた」になる"></doc-pin>
+  </doc-code>
+  <doc-ask id="save">
+    <p>畳んだ状態をどこに覚えますか？</p>
+    <label><input type="radio" name="save" value="db" checked> DB の blocks に保存する</label>
+    <label><input type="radio" name="save" value="memory"> アプリを開いているあいだだけ <small>claim 4 goes。3 ファイル減る</small></label>
+  </doc-ask>
+  <div data-if="save=memory"><doc-note tone="info">PageEditor が畳んだ行の id を Set で覚える。ページを移るか終了すると、全部開く。</doc-note></div>
+
+  <doc-claim>
+    <p>Block は collapsed を持つ。</p>
+    <doc-schema id="block" lang="java" diff title="model/Block.java" caption="緑が足す部分。withCollapsed() も足す。">
+<script type="text/plain">
+ public record Block(
+         String id,
+         String pageId,
+         BlockType type,
+         String text,
+         List<Mark> marks,
+         boolean checked,
+         int indent,
+-        double sortKey) {
++        double sortKey,
++        boolean collapsed) {
+</script>
+    </doc-schema>
+  </doc-claim>
+
+  <doc-claim>
+    <p>BlockRepo は collapsed を読み、書く。</p>
+    <doc-calls title="読み書き" caption="AutoSaver は変えない。Block を丸ごと渡しているので。">
+<script type="text/plain">
+~ BlockRepo.listByPage(pageId)                           @ src/main/java/app/dearnotes/db/BlockRepo.java:21
+~ BlockRepo.save(upserts, deletes)                       @ src/main/java/app/dearnotes/db/BlockRepo.java:46
+  AutoSaver.changed(block)                               @ src/main/java/app/dearnotes/save/AutoSaver.java:66
+</script>
+    </doc-calls>
+    <doc-claim at="src/main/java/app/dearnotes/db/BlockRepo.java:21">
+      <doc-code diff file="src/main/java/app/dearnotes/db/BlockRepo.java" lang="java" start="21">
+<script type="text/plain">
+@@ -21,13 +21,13 @@
+     public List<Block> listByPage(String pageId) throws SQLException {
+         return db.read(c -> {
+             try (var ps = c.prepareStatement("""
+-                    SELECT id, page_id, type, text, marks, checked, indent, sort_key
++                    SELECT id, page_id, type, text, marks, checked, indent, sort_key, collapsed
+                     FROM blocks WHERE page_id = ? ORDER BY sort_key, id""")) {
+                 ps.setString(1, pageId);
+                 try (var rs = ps.executeQuery()) {
+                     var out = new ArrayList<Block>();
+                     while (rs.next()) {
+                         out.add(new Block(
+                             rs.getString(1), rs.getString(2), BlockType.fromDb(rs.getString(3)),
+                             rs.getString(4), MarksCodec.decode(rs.getString(5)),
+-                            rs.getInt(6) != 0, rs.getInt(7), rs.getDouble(8)));
++                            rs.getInt(6) != 0, rs.getInt(7), rs.getDouble(8), rs.getInt(9) != 0));
+</script>
+      </doc-code>
+    </doc-claim>
+    <doc-claim at="src/main/java/app/dearnotes/db/BlockRepo.java:46">
+      <doc-code diff file="src/main/java/app/dearnotes/db/BlockRepo.java" lang="java" start="52">
+<script type="text/plain">
+@@ -52,7 +52,8 @@
+-                    INSERT INTO blocks (id, page_id, type, text, marks, checked, indent, sort_key, updated_at)
+-                    SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?
++                    INSERT INTO blocks (id, page_id, type, text, marks, checked, indent, sort_key, collapsed, updated_at)
++                    SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+                     WHERE EXISTS (SELECT 1 FROM pages WHERE id = ?)
+                     ON CONFLICT (id) DO UPDATE SET
+                       page_id = excluded.page_id, type = excluded.type, text = excluded.text,
+                       marks = excluded.marks, checked = excluded.checked, indent = excluded.indent,
+-                      sort_key = excluded.sort_key, updated_at = excluded.updated_at""")) {
++                      sort_key = excluded.sort_key, collapsed = excluded.collapsed,
++                      updated_at = excluded.updated_at""")) {
+</script>
+        <doc-pin line="55" title="引数の番号が 1 つずつずれる">ps.setXxx(9…11) も直す。</doc-pin>
+      </doc-code>
+    </doc-claim>
+  </doc-claim>
+</doc-claim>
+
+<!-- ═════ 5 ═════ -->
+<doc-claim>
+  <p>キー操作と並べ替えは、隠れた行を壊さない。</p>
+  <doc-mock frame="none" w="400"><template>
+<div class="ui"><div class="page">
+  <div class="hh folded"><span class="fd">▸</span>1日目</div>
+  <div class="b in1" data-ref="new"><span class="cur">「/」でコマンド</span></div>
+  <div class="hh"><span class="fd">▾</span>2日目</div>
+  <div class="b in1">嵐山</div>
+</div></div></template>
+    <doc-pin ref="new" anchor="r" title="畳んだ見出しの末尾で Enter">新しい行は、隠れた 3 行の後に入る。</doc-pin>
+  </doc-mock>
+
+  <doc-claim>
+    <p>Enter と矢印キーは、隠れた行を飛ばす。</p>
+    <doc-calls title="飛ばす" caption="隠れた行にカーソルを置かない。">
+<script type="text/plain">
+~ PageEditor.enter(v)                                    @ src/main/java/app/dearnotes/ui/PageEditor.java:181   -- 畳んだ行なら sectionEnd の位置に入れる
+~ PageEditor.focusPrevious(v)                            @ src/main/java/app/dearnotes/ui/PageEditor.java:277   -- 見える行まで戻る
+~ PageEditor.focusNext(v)                                @ src/main/java/app/dearnotes/ui/PageEditor.java:289   -- 見える行まで進む
+~ PageEditor.clickBelowLastBlock()                       @ src/main/java/app/dearnotes/ui/PageEditor.java:546   -- 最後の見える行を見る
+</script>
+    </doc-calls>
+  </doc-claim>
+
+  <doc-claim>
+    <p>畳んだ行を動かすと、隠れた行も一緒に動く。</p>
+    <doc-code title="PageEditor.java · sketch" lang="java">
+<script type="text/plain">
+/** v と、v が隠している行を、まとめて insertAt に移す。 */
+private void moveSection(BlockView v, int insertAt) {
+    int from = views.indexOf(v);
+    int end = v.block().collapsed() ? Outline.sectionEnd(blocks(), from) : from + 1;
+    List<BlockView> group = List.copyOf(views.subList(from, end));
+    // 1つずつ move() すると sort_key は隠れた行にも順に振られる
+    int at = insertAt > from ? insertAt - group.size() + 1 : insertAt;
+    for (int k = 0; k < group.size(); k++) move(group.get(k), at + k);
+}
+</script>
+      <doc-pin line="4" title="開いた行は今と同じく 1 行だけ動く"></doc-pin>
+    </doc-code>
+  </doc-claim>
+
+  <doc-claim>
+    <p>隠れた行に触れる操作は、先にその節を開く。</p>
+    <doc-calls title="先に開く" caption="どれも今の処理の前に reveal() を 1 回呼ぶだけ。">
+<script type="text/plain">
+~ PageEditor.backspaceAtStart(v)                         @ src/main/java/app/dearnotes/ui/PageEditor.java:214   -- 前の行が隠れているとき
+~ PageEditor.deleteAtEnd(v)                              @ src/main/java/app/dearnotes/ui/PageEditor.java:246   -- 次の行が隠れているとき
+~ PageEditor.indent(v, delta)                            @ src/main/java/app/dearnotes/ui/PageEditor.java:266   -- Tab で畳んだ行の子になるとき
+~ PageEditor.pasteLines(v, text)                         @ src/main/java/app/dearnotes/ui/PageEditor.java:338   -- 貼った行が隠れるとき
+</script>
+    </doc-calls>
+  </doc-claim>
+</doc-claim>
+
+<!-- ═════ shared · not changing ═════ -->
+<doc-claim aux="shared">
+  <p>Shared: 範囲と目次を計算する Outline。UI から切り離してテストする。</p>
+  <doc-code title="editor/Outline.java · sketch" lang="java">
+<script type="text/plain">
+public final class Outline {
+    public record Heading(String blockId, int level, String text) {}
+
+    /** i の行が隠す範囲の終わり（含まない）。子がなければ i + 1。 */
+    public static int sectionEnd(List<Block> blocks, int i) {
+        Block self = blocks.get(i);
+        int level = headingLevel(self);                 // H1=1 … H3=3、見出しでなければ 0
+        int j = i + 1;
+        for (; j < blocks.size(); j++) {
+            Block b = blocks.get(j);
+            int lv = headingLevel(b);
+            boolean stop = level > 0
+                ? b.indent() < self.indent() || (lv > 0 && lv <= level)
+                : b.indent() <= self.indent();
+            if (stop) break;
+        }
+        return j;
+    }
+
+    public static boolean hasChildren(List<Block> blocks, int i) {
+        return sectionEnd(blocks, i) > i + 1;
+    }
+
+    /** 畳んだ行の範囲に入る行は true。範囲が重なっても足すだけ。 */
+    public static boolean[] hidden(List<Block> blocks) { … }
+    /** H1〜H3。文字が空なら「無題」。 */
+    public static List<Heading> headings(List<Block> blocks) { … }
+    /** id の行を隠している畳んだ行。外側から順。 */
+    public static List<String> foldersOf(List<Block> blocks, String id) { … }
+}
+</script>
+  </doc-code>
+</doc-claim>
+
+<doc-claim aux="scope">
+  <p>Not changing: サイドバーのページ一覧、検索、貼り付けの解析、番号の付け方。</p>
+  <ul>
+    <li>サイドバーのページ一覧は、今も TreeView で畳める。変えない。</li>
+    <li>SearchRepo と FTS は変えない。検索は隠れた行も見つける。</li>
+    <li>PasteParser は変えない。貼った行は開いた状態で入る。</li>
+    <li>番号付きリストは、隠れた行も今と同じく数える。</li>
+    <li>ブロックの種類は足さない（「トグル」を選んだときを除く）。</li>
+  </ul>
+</doc-claim>
+
+</doc-plan>
+</main>
+</body>
+</html>

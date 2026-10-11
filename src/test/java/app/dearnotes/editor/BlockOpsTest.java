@@ -41,13 +41,20 @@ class BlockOpsTest {
     }
 
     @Test
-    void keyForMoveIgnoresTheMovedBlock() {
-        var list = List.of(b(PARAGRAPH, 0, 1024), b(PARAGRAPH, 0, 2048), b(PARAGRAPH, 0, 3072));
-        // 先頭を末尾へ
-        assertEquals(3584.0, BlockOps.keyForMove(list, 0, 2));
-        // 末尾を先頭へ
-        assertEquals(512.0, BlockOps.keyForMove(list, 2, 0));
-        // 先頭を2番目と3番目の間へ
-        assertEquals(2560.0, BlockOps.keyForMove(list, 0, 1));
+    void keysForMoveSpreadsGroupBetweenNeighbours() {
+        var list = List.of(b(PARAGRAPH, 0, 1024), b(PARAGRAPH, 1, 2048), b(PARAGRAPH, 1, 3072),
+            b(PARAGRAPH, 0, 4096));
+        // 先頭の3行をまとめて末尾へ
+        assertEquals(List.of(5120.0, 6144.0, 7168.0), BlockOps.keysForMove(list, 0, 3, 1));
+        // 末尾を先頭へ（1行だけ）
+        assertEquals(List.of(512.0), BlockOps.keysForMove(list, 3, 1, 0));
+        // 2〜3行目を先頭へ
+        assertEquals(List.of(1024.0 / 3, 2048.0 / 3), BlockOps.keysForMove(list, 1, 2, 0));
+    }
+
+    @Test
+    void keysForMoveReturnsNullWhenNoRoom() {
+        var list = List.of(b(PARAGRAPH, 0, 1), b(PARAGRAPH, 0, Math.nextUp(1.0)), b(PARAGRAPH, 0, 5));
+        assertNull(BlockOps.keysForMove(list, 2, 1, 1));
     }
 }

@@ -118,6 +118,27 @@
 .block.drop-above { -fx-border-color: -dn-accent transparent transparent transparent; -fx-border-width: 2 0 0 0; }
 .block.drop-below { -fx-border-color: transparent transparent -dn-accent transparent; -fx-border-width: 0 0 2 0; }
 
+/* 折りたたみ: ▾ はマウスを載せたときだけ、▸ はいつも見せる */
+.block-fold {
+    -fx-min-width: 16;
+    -fx-pref-width: 16;
+    -fx-max-width: 16;
+    -fx-alignment: top-center;
+    -fx-padding: 9 0 0 0;
+}
+.block-fold-arrow {
+    -fx-shape: "M 0 0 L 6 5 L 0 10 Z";
+    -fx-min-width: 6; -fx-pref-width: 6; -fx-max-width: 6;
+    -fx-min-height: 10; -fx-pref-height: 10; -fx-max-height: 10;
+    -fx-background-color: transparent;
+}
+.block.foldable .block-fold { -fx-cursor: hand; }
+.block.foldable:hover .block-fold-arrow { -fx-background-color: -dn-muted; -fx-rotate: 90; }
+.block.foldable.collapsed .block-fold-arrow { -fx-background-color: -dn-ink; -fx-rotate: 0; }
+.block.h1 .block-fold { -fx-padding: 16 0 0 0; }
+.block.h2 .block-fold { -fx-padding: 13 0 0 0; }
+.block.h3 .block-fold { -fx-padding: 11 0 0 0; }
+
 .block-gutter {
     -fx-min-width: 26;
     -fx-pref-width: 26;
@@ -178,6 +199,44 @@
     -rtfx-background-color: #f1f0ec;
 }
 .styled-text-area .m-link { -fx-fill: -dn-accent; -fx-underline: true; }
+
+/* ---- 目次 ---- */
+
+.outline-button {
+    -fx-background-color: transparent;
+    -fx-text-fill: -dn-muted;
+    -fx-padding: 2 8;
+    -fx-background-radius: 5;
+    -fx-cursor: hand;
+}
+.outline-button:hover, .outline-button.active { -fx-background-color: -dn-hover; -fx-text-fill: -dn-ink; }
+
+.outline-panel {
+    -fx-background-color: -dn-side;
+    -fx-border-color: transparent transparent transparent -dn-line;
+    -fx-border-width: 0 0 0 1;
+    -fx-padding: 12 8;
+    -fx-spacing: 6;
+}
+.outline-title { -fx-text-fill: -dn-muted; -fx-font-size: 12px; -fx-font-weight: bold; -fx-padding: 0 6; }
+.outline-scroll, .outline-scroll > .viewport {
+    -fx-background-color: transparent;
+    -fx-background-insets: 0;
+    -fx-padding: 0;
+}
+.outline-items { -fx-spacing: 1; }
+.outline-item {
+    -fx-text-fill: -dn-ink;
+    -fx-padding: 3 6;
+    -fx-background-radius: 5;
+    -fx-cursor: hand;
+}
+.outline-item:hover { -fx-background-color: -dn-hover; }
+.outline-item.outline-h2 { -fx-padding: 3 6 3 18; }
+.outline-item.outline-h3 { -fx-padding: 3 6 3 30; -fx-font-size: 13px; }
+.outline-item.blank { -fx-text-fill: -dn-muted; }
+.outline-item.current { -fx-font-weight: bold; }
+.outline-empty { -fx-text-fill: -dn-muted; -fx-font-size: 12.5px; -fx-padding: 3 6; }
 
 /* ---- 「/」メニュー ---- */
 

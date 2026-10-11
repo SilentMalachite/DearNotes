@@ -21,7 +21,7 @@ public final class BlockRepo implements BlockStore {
     public List<Block> listByPage(String pageId) throws SQLException {
         return db.read(c -> {
             try (var ps = c.prepareStatement("""
-                    SELECT id, page_id, type, text, marks, checked, indent, sort_key
+                    SELECT id, page_id, type, text, marks, checked, indent, sort_key, collapsed
                     FROM blocks WHERE page_id = ? ORDER BY sort_key, id""")) {
                 ps.setString(1, pageId);
                 try (var rs = ps.executeQuery()) {
@@ -30,7 +30,7 @@ public final class BlockRepo implements BlockStore {
                         out.add(new Block(
                             rs.getString(1), rs.getString(2), BlockType.fromDb(rs.getString(3)),
                             rs.getString(4), MarksCodec.decode(rs.getString(5)),
-                            rs.getInt(6) != 0, rs.getInt(7), rs.getDouble(8)));
+                            rs.getInt(6) != 0, rs.getInt(7), rs.getDouble(8), rs.getInt(9) != 0));
                     }
                     return out;
                 }
@@ -49,13 +49,14 @@ public final class BlockRepo implements BlockStore {
             long now = System.currentTimeMillis();
             var pages = new HashSet<String>();
             try (var ps = c.prepareStatement("""
-                    INSERT INTO blocks (id, page_id, type, text, marks, checked, indent, sort_key, updated_at)
-                    SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?
+                    INSERT INTO blocks (id, page_id, type, text, marks, checked, indent, sort_key, collapsed, updated_at)
+                    SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
                     WHERE EXISTS (SELECT 1 FROM pages WHERE id = ?)
                     ON CONFLICT (id) DO UPDATE SET
                       page_id = excluded.page_id, type = excluded.type, text = excluded.text,
                       marks = excluded.marks, checked = excluded.checked, indent = excluded.indent,
-                      sort_key = excluded.sort_key, updated_at = excluded.updated_at""")) {
+                      sort_key = excluded.sort_key, collapsed = excluded.collapsed,
+                      updated_at = excluded.updated_at""")) {
                 for (Block b : upserts) {
                     ps.setString(1, b.id());
                     ps.setString(2, b.pageId());
@@ -65,8 +66,9 @@ public final class BlockRepo implements BlockStore {
                     ps.setInt(6, b.checked() ? 1 : 0);
                     ps.setInt(7, b.indent());
                     ps.setDouble(8, b.sortKey());
-                    ps.setLong(9, now);
-                    ps.setString(10, b.pageId());
+                    ps.setInt(9, b.collapsed() ? 1 : 0);
+                    ps.setLong(10, now);
+                    ps.setString(11, b.pageId());
                     ps.addBatch();
                     pages.add(b.pageId());
                 }
