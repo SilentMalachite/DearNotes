@@ -47,7 +47,7 @@ JDK 25 が要ります。JavaFX は Gradle が取ってくるので、JavaFX 入
 - アイコンを付けるときは `packaging/mac/DearNotes.icns` と `packaging/win/DearNotes.ico` を置きます
 - 版は `build.gradle.kts` の `version` で決まります。Windows の `--win-upgrade-uuid` は変えないでください（新しい版が古い版を置き換えるのに使います）
 
-GitHub に `v1.0.0` のようなタグを push すると、`.github/workflows/release.yml` が macOS（Apple Silicon と Intel）と Windows でインストーラーを作り、Artifacts に置きます。
+GitHub に `v1.0.0` のようなタグを push すると、`.github/workflows/release.yml` が macOS（Apple Silicon）と Windows でインストーラーを作り、Artifacts に置きます。Intel Mac はサポート外です。
 
 ## 署名していないアプリを開く
 

@@ -89,7 +89,7 @@ app.dearnotes
 ### 6. 配布
 - `jlinkRuntime` — `java.base,java.sql,java.desktop,java.logging,java.xml,java.naming,jdk.unsupported,jdk.charsets,jdk.localedata,jdk.crypto.ec` を `--strip-debug --no-header-files --no-man-pages` で
 - `jpackage` — mac は `.dmg`、Windows は `.msi`（`--win-menu --win-shortcut --win-per-user-install --win-upgrade-uuid`）。アイコンは `packaging/` に置けば使う
-- `.github/workflows/release.yml` — タグ `v*` で macos-latest / macos-15-intel / windows-latest がそれぞれ作る
+- `.github/workflows/release.yml` — タグ `v*` で macos-latest（Apple Silicon）/ windows-latest がそれぞれ作る。Intel Mac はサポート外
 - `README.md` — ビルド方法、未署名アプリを開く手順（macOS 15 以降、Windows SmartScreen）
 
 ### 7. 確認
