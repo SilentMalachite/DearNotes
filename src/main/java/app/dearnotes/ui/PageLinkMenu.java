@@ -27,6 +27,9 @@ final class PageLinkMenu {
     private final OnPick onPick;
     private BlockView target;
     private int from;
+    /** Esc で閉じた「[[」。同じ「[[」の後ろで打ち続けても、候補を出し直さない。 */
+    private BlockView dismissedView;
+    private int dismissedFrom = -1;
 
     PageLinkMenu(OnPick onPick) {
         this.onPick = onPick;
@@ -50,6 +53,8 @@ final class PageLinkMenu {
         list.setOnMouseClicked(e -> pick());
         popup.getContent().add(list);
         popup.setAutoHide(true);
+        // Esc は Popup が先に取ってしまうので、handleKey で受けて閉じたことを覚える
+        popup.setHideOnEscape(false);
         popup.setOnHidden(e -> target = null);
     }
 
@@ -83,6 +88,20 @@ final class PageLinkMenu {
         if (v == target) hide();
     }
 
+    /** v の from の「[[」を Esc で閉じたか。 */
+    boolean dismissed(BlockView v, int from) {
+        return v == dismissedView && from == dismissedFrom;
+    }
+
+    /** v の「[[」が無くなった。閉じて、Esc で閉じたことも忘れる。 */
+    void forget(BlockView v) {
+        close(v);
+        if (v == dismissedView) {
+            dismissedView = null;
+            dismissedFrom = -1;
+        }
+    }
+
     /** 候補が出ているときの ↑↓ Enter Tab Esc。使ったら true。 */
     boolean handleKey(BlockView v, KeyEvent e) {
         if (!popup.isShowing() || v != target) return false;
@@ -91,7 +110,11 @@ final class PageLinkMenu {
             case UP -> sel.select(Math.max(0, sel.getSelectedIndex() - 1));
             case DOWN -> sel.select(Math.min(list.getItems().size() - 1, sel.getSelectedIndex() + 1));
             case ENTER, TAB -> pick();
-            case ESCAPE -> hide();
+            case ESCAPE -> {
+                dismissedView = v;
+                dismissedFrom = from;
+                hide();
+            }
             default -> {
                 return false;
             }

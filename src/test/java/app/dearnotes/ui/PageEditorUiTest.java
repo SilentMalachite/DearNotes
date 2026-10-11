@@ -285,6 +285,84 @@ class PageEditorUiTest {
     }
 
     @Test
+    void typingAtTheStartOfPageLinkIsNotLinked() throws Exception {
+        var p = pages.create(null, "リンク");
+        blocks.save(List.of(Block.empty(p.id(), BlockType.PARAGRAPH, 1024)
+            .withContent("京都", List.of(new Mark(0, 2, Mark.Style.PAGE, "x")))), List.of());
+        reopen(p.id());
+        fx(() -> {
+            window.editor().views().getFirst().focusAt(0);
+            return null;
+        });
+        settle();
+        type("明日は");
+        assertEquals("明日は京都", fx(() -> current().block().text()));
+        assertEquals(List.of(new Mark(3, 5, Mark.Style.PAGE, "x")), fx(() -> current().block().marks()));
+    }
+
+    @Test
+    void undoingDeleteAtTheEndOfPageLinkKeepsTheLink() throws Exception {
+        var p = pages.create(null, "リンク");
+        blocks.save(List.of(Block.empty(p.id(), BlockType.PARAGRAPH, 1024)
+            .withContent("京都", List.of(new Mark(0, 2, Mark.Style.PAGE, "x")))), List.of());
+        reopen(p.id());
+        focusEndOf(0);
+        press(KeyCode.BACK_SPACE);
+        assertEquals("京", fx(() -> current().block().text()));
+        press(KeyCode.Z, KeyMod.SHORTCUT);
+        assertEquals("京都", fx(() -> current().block().text()));
+        assertEquals(List.of(new Mark(0, 2, Mark.Style.PAGE, "x")), fx(() -> current().block().marks()));
+    }
+
+    @Test
+    void movingCaretAwayClosesPageSuggestions() throws Exception {
+        pages.create(null, "京都");
+        focusFirstBlock();
+        type("東京と[[京");
+        fx(() -> {
+            current().area().moveTo(0);
+            return null;
+        });
+        settle();
+        press(KeyCode.ENTER);
+        // 候補は閉じているので、Enter はふつうに行を分ける
+        assertEquals(List.of("paragraph:0:", "paragraph:0:東京と[[京"), summary());
+        assertEquals(1, pages.findByTitle("京", 8).size());
+    }
+
+    @Test
+    void escapeKeepsSuggestionsClosedForThatBracket() throws Exception {
+        focusFirstBlock();
+        type("[[奈良");
+        press(KeyCode.ESCAPE);
+        type("x");
+        press(KeyCode.ENTER);
+        assertEquals(List.of("paragraph:0:[[奈良x", "paragraph:0:"), summary());
+        assertEquals(List.of(), pages.findByTitle("奈良", 8));
+    }
+
+    @Test
+    void pageLinkInsideBoldStaysBold() throws Exception {
+        var kyoto = pages.create(null, "京都");
+        focusFirstBlock();
+        type("[[京");
+        fx(() -> {
+            current().area().selectRange(0, 3);
+            return null;
+        });
+        press(KeyCode.B, KeyMod.SHORTCUT);
+        fx(() -> {
+            current().area().moveTo(3);
+            return null;
+        });
+        settle();
+        type("都");
+        press(KeyCode.ENTER);
+        assertEquals(List.of(new Mark(0, 2, Mark.Style.BOLD), new Mark(0, 2, Mark.Style.PAGE, kyoto.id())),
+            fx(() -> current().block().marks()));
+    }
+
+    @Test
     void typingBracketsAndEnterInsertsPageLink() throws Exception {
         var kyoto = pages.create(null, "京都");
         focusFirstBlock();

@@ -58,6 +58,7 @@ final class PageEditor extends VBox implements BlockView.Host {
     private final SlashMenu slash = new SlashMenu(this::applySlash);
     private final PageLinkMenu links = new PageLinkMenu(this::applyPageLink);
     private final Backlinks backlinks;
+    private final java.util.Set<BlockView> linkQueryPending = new java.util.HashSet<>();
     private final PauseTransition renameLater = new PauseTransition(Duration.millis(300));
     private ScrollPane scrollPane;
     private Page page;
@@ -431,13 +432,17 @@ final class PageEditor extends VBox implements BlockView.Host {
 
     @Override
     public void linkQuery(BlockView v) {
-        // 変更の知らせのあとでカーソルが動くことがあるので、次の回で読む
+        // 文字とカーソルの両方の変化で呼ばれるので、1回にまとめる。カーソルが動き終わってから読む
+        if (!linkQueryPending.add(v)) return;
         Platform.runLater(() -> {
-            if (!views.contains(v) || v.block().type() == BlockType.CODE) {
+            linkQueryPending.remove(v);
+            boolean focused = v.getScene() != null && v.getScene().getFocusOwner() == v.area();
+            if (!views.contains(v) || !focused || v.block().type() == BlockType.CODE) {
                 links.close(v);
                 return;
             }
             PageLinks.queryAt(v.text(), v.caret()).ifPresentOrElse(q -> {
+                if (links.dismissed(v, q.from())) return;
                 String name = q.text().strip();
                 var items = new ArrayList<PageLinkMenu.Choice>();
                 Errors.get("ページを探す", () -> s.pages().findByTitle(name, 8)).ifPresent(found -> {
@@ -446,7 +451,7 @@ final class PageEditor extends VBox implements BlockView.Host {
                 boolean exact = items.stream().anyMatch(c -> c.page().title().equals(name));
                 if (!name.isEmpty() && !exact) items.add(new PageLinkMenu.Choice(null, name));
                 links.show(v, q.from(), items);
-            }, () -> links.close(v));
+            }, () -> links.forget(v));
         });
     }
 
@@ -571,14 +576,15 @@ final class PageEditor extends VBox implements BlockView.Host {
 
     /** 「[[語句」を、選んだページへのリンクに置き換える。新しいページの行なら、先に子ページを作る。 */
     private void applyPageLink(BlockView v, int from, PageLinkMenu.Choice c) {
+        // 候補を出した後にカーソルが動いていたら、置き換える範囲が違うのでやめる（ページも作らない）
+        var q = PageLinks.queryAt(v.text(), v.caret());
+        if (q.isEmpty() || q.get().from() != from) return;
         Page target = c.page();
         if (target == null) {
             target = nav.newLinkedPage(page.id(), c.name()).orElse(null);
             if (target == null) return;
         }
-        int caret = v.caret();
-        if (from < 0 || from > caret) return;
-        v.insertPageLink(from, caret, target.displayTitle().replace('\n', ' '), target.id());
+        v.insertPageLink(from, v.caret(), target.displayTitle().replace('\n', ' '), target.id());
     }
 
     private void change(BlockView v, Block b) {

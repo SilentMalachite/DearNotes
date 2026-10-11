@@ -69,6 +69,8 @@ final class BlockView extends HBox {
     private final Label placeholder = new Label();
     private Block block;
     private boolean loading;
+    /** insertPageLink の最中。入れたリンクを unlink で外さないため。 */
+    private boolean linking;
     private boolean composing;
     private boolean foldable;
     private boolean hidden;
@@ -124,7 +126,14 @@ final class BlockView extends HBox {
             // 日本語入力では「＃　」がまとめて確定されることもあるので、短い入力なら調べる
             int n = ch.getInserted().length();
             if (!loading && n >= 1 && n <= 4) Platform.runLater(this::detectShortcut);
-            if (!loading && n >= 1) Platform.runLater(() -> unlinkTail(ch.getPosition(), n));
+            // 元に戻すときは、消す前の装飾ごと戻すので触らない
+            if (!loading && !linking && n >= 1 && !area.getUndoManager().isPerformingAction()) {
+                Platform.runLater(() -> unlink(ch.getPosition(), n));
+            }
+        });
+        // ←→ やクリックでカーソルが「[[」から離れたら、ページの候補を閉じる
+        area.caretPositionProperty().addListener((obs, old, now) -> {
+            if (!loading) host.linkQuery(this);
         });
         area.focusedProperty().addListener((obs, was, now) -> {
             updatePlaceholder();
@@ -183,8 +192,18 @@ final class BlockView extends HBox {
 
     /** from から to を、target のページへのリンクにした name に置き換える。カーソルはリンクの後ろ。 */
     void insertPageLink(int from, int to, String name, String target) {
-        area.replaceText(from, to, name);
-        area.setStyle(from, from + name.length(), StyledText.pageClasses(target));
+        linking = true;
+        try {
+            area.replaceText(from, to, name);
+            // 太字などは残し、リンクだけ付け替える
+            area.setStyleSpans(from, area.getStyleSpans(from, from + name.length()).mapStyles(classes -> {
+                var next = new java.util.ArrayList<>(StyledText.withoutPage(classes));
+                next.addAll(StyledText.pageClasses(target));
+                return next;
+            }));
+        } finally {
+            linking = false;
+        }
         focusAt(from + name.length());
     }
 
@@ -311,16 +330,21 @@ final class BlockView extends HBox {
     }
 
     /**
-     * リンクの末尾に打った文字から、ページへのリンクの印を外す。
-     * RichTextFX は前の文字の装飾を引き継ぐので、そのままだと打った文字もリンクになる。
-     * 後ろの文字も同じリンクなら、リンクの途中の入力なので残す。
+     * リンクの外に打った文字から、ページへのリンクの印を外す。
+     * RichTextFX は前の文字（行頭では後ろの文字）の装飾を引き継ぐので、そのままだと打った文字もリンクになる。
+     * 前と後ろの文字が同じリンクなら、リンクの途中の入力なので残す。
      */
-    private void unlinkTail(int at, int length) {
+    private void unlink(int at, int length) {
         int end = at + length;
-        if (at == 0 || end > area.getLength()) return;
-        String target = StyledText.targetOf(area.getStyleOfChar(at - 1));
-        if (target == null || !target.equals(StyledText.targetOf(area.getStyleOfChar(at)))) return;
-        if (end < area.getLength() && target.equals(StyledText.targetOf(area.getStyleOfChar(end)))) return;
+        if (end > area.getLength()) return;
+        String target = StyledText.targetOf(area.getStyleOfChar(at));
+        if (target == null) return;
+        String text = area.getText();
+        boolean before = at > 0 && text.charAt(at - 1) != '\n'
+            && target.equals(StyledText.targetOf(area.getStyleOfChar(at - 1)));
+        boolean after = end < text.length() && text.charAt(end) != '\n'
+            && target.equals(StyledText.targetOf(area.getStyleOfChar(end)));
+        if (before && after) return;
         area.setStyleSpans(at, area.getStyleSpans(at, end).mapStyles(StyledText::withoutPage));
     }
 
