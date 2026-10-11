@@ -1,6 +1,20 @@
 # DearNotes
 
+[![CI](https://github.com/SilentMalachite/DearNotes/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/SilentMalachite/DearNotes/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/SilentMalachite/DearNotes)](https://github.com/SilentMalachite/DearNotes/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/SilentMalachite/DearNotes/total)](https://github.com/SilentMalachite/DearNotes/releases)
+[![License](https://img.shields.io/github/license/SilentMalachite/DearNotes)](LICENSE)
+[![Java](https://img.shields.io/badge/Java-25-orange?logo=openjdk)](https://adoptium.net/)
+[![Platform](https://img.shields.io/badge/platform-macOS%20%28Apple%20Silicon%29%20%7C%20Windows-lightgrey)](#ダウンロード)
+
 Notion のように1行ずつブロックで書く、手元で動くメモアプリです。Java 25、JavaFX、RichTextFX、SQLite で作っています。macOS と Windows 向けに jpackage でインストーラーを作れます。
+
+## ダウンロード
+
+[![macOS (Apple Silicon) 版をダウンロード](https://img.shields.io/badge/Download-macOS%20%28Apple%20Silicon%29-000000?style=for-the-badge)](https://github.com/SilentMalachite/DearNotes/releases/latest)
+[![Windows 版をダウンロード](https://img.shields.io/badge/Download-Windows-0078D4?style=for-the-badge)](https://github.com/SilentMalachite/DearNotes/releases/latest)
+
+[最新のリリース](https://github.com/SilentMalachite/DearNotes/releases/latest)から、macOS なら `.dmg`、Windows なら `.msi` を選んでください。Java は同梱しているので要りません。Intel Mac はサポート外です。インストーラーには署名をしていないので、初めて開くときは[署名していないアプリを開く](#署名していないアプリを開く)の手順で許可してください。
 
 ## できること
 
