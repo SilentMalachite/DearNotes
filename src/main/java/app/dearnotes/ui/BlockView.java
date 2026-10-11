@@ -1,6 +1,7 @@
 package app.dearnotes.ui;
 
 import app.dearnotes.editor.MarkdownShortcuts;
+import app.dearnotes.editor.Marks;
 import app.dearnotes.editor.SlashCommands;
 import app.dearnotes.model.Block;
 import app.dearnotes.model.BlockType;
@@ -352,6 +353,9 @@ final class BlockView extends HBox {
     private void detectShortcut() {
         if (block.type() != BlockType.PARAGRAPH || composing) return;
         MarkdownShortcuts.detect(area.getText(), area.getCaretPosition())
+            // 「---」「#」などの名前のページへのリンクは記号ではない。変えるとリンクが消える
+            .filter(hit -> StyledText.read(area).stream()
+                .noneMatch(m -> m.style() == Mark.Style.PAGE && m.start() < hit.prefixLength()))
             .ifPresent(hit -> host.convert(this, hit.type(), hit.prefixLength()));
     }
 
@@ -476,18 +480,13 @@ final class BlockView extends HBox {
     /** Cmd/Ctrl を押しながらリンクを押すと開く。ページへのリンクなら、そのページへ移る。 */
     private void onClicked(MouseEvent e) {
         if (!e.isShortcutDown()) return;
-        int at = area.hit(e.getX(), e.getY()).getInsertionIndex();
-        for (Mark m : block.marks()) {
-            if (m.style() == Mark.Style.PAGE && m.start() <= at && at <= m.end()) {
-                host.openPage(m.target());
-                e.consume();
-                return;
-            }
-            if (m.style() == Mark.Style.LINK && m.start() <= at && at <= m.end()) {
-                host.openLink(block.text().substring(m.start(), m.end()).strip());
-                e.consume();
-                return;
-            }
-        }
+        // 文字と文字の間ではなく、押した文字そのものを見る（行の文字より右を押したときは何もしない）
+        var at = area.hit(e.getX(), e.getY()).getCharacterIndex();
+        if (at.isEmpty()) return;
+        Marks.linkAt(block.marks(), at.getAsInt()).ifPresent(m -> {
+            if (m.style() == Mark.Style.PAGE) host.openPage(m.target());
+            else host.openLink(block.text().substring(m.start(), m.end()).strip());
+            e.consume();
+        });
     }
 }

@@ -322,9 +322,9 @@ final class Inline {
     /** ページへのリンク。行き先があれば [文字](パス)、なければふだんの文字。 */
     private static String pageLink(String s, String href) {
         if (href == null) return escape(s);
-        // ファイル名に使える文字のうち、リンク先の書き方を壊すものを % で書く
+        // ファイル名に使える文字のうち、リンク先の書き方を壊すもの（& は文字参照になる）を % で書く
         String target = href.replace("%", "%25").replace(" ", "%20")
-            .replace("(", "%28").replace(")", "%29").replace("#", "%23");
+            .replace("(", "%28").replace(")", "%29").replace("#", "%23").replace("&", "%26");
         return "[" + escape(s) + "](" + target + ")";
     }
 

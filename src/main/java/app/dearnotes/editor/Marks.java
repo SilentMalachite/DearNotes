@@ -5,6 +5,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 
 /** ブロックを分けたり繋げたりするときの装飾の付け替え。 */
 public final class Marks {
@@ -20,6 +21,14 @@ public final class Marks {
             if (s < e) out.add(m.withRange(s - from, e - from));
         }
         return normalize(out);
+    }
+
+    /** index の文字にかかるリンク（ページへのリンクも）。隣り合うリンクを取り違えないよう、end の文字は含めない。 */
+    public static Optional<Mark> linkAt(List<Mark> marks, int index) {
+        return marks.stream()
+            .filter(m -> m.style() == Mark.Style.PAGE || m.style() == Mark.Style.LINK)
+            .filter(m -> m.start() <= index && index < m.end())
+            .findFirst();
     }
 
     /** a の後ろに長さ aLength の文字列が続くとして、b をずらして繋げる。 */

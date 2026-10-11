@@ -122,6 +122,8 @@ class InlineTest {
     void pageLinkPathIsEncoded() {
         assertEquals("[a\\*b](a%20%28b%29%20%2325%25.md)",
             Inline.write("a*b", List.of(new Mark(0, 3, PAGE, "k")), id -> "a (b) #25%.md"));
+        // &copy; を文字参照に読ませない
+        assertEquals("[a](A%26copy;B.md)", Inline.write("a", List.of(new Mark(0, 1, PAGE, "k")), id -> "A&copy;B.md"));
     }
 
     @Test

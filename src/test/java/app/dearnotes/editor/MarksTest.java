@@ -5,9 +5,21 @@ import static org.junit.jupiter.api.Assertions.*;
 
 import app.dearnotes.model.Mark;
 import java.util.List;
+import java.util.Optional;
 import org.junit.jupiter.api.Test;
 
 class MarksTest {
+
+    @Test
+    void linkAtUsesTheClickedCharacter() {
+        var kyoto = new Mark(0, 2, PAGE, "k");
+        var osaka = new Mark(2, 4, PAGE, "o");
+        var marks = List.of(new Mark(0, 4, BOLD), kyoto, osaka);
+        assertEquals(Optional.of(kyoto), Marks.linkAt(marks, 1));
+        assertEquals(Optional.of(osaka), Marks.linkAt(marks, 2));
+        assertEquals(Optional.empty(), Marks.linkAt(marks, 4));
+        assertEquals(Optional.of(new Mark(1, 3, LINK)), Marks.linkAt(List.of(new Mark(1, 3, LINK)), 1));
+    }
 
     @Test
     void sliceClipsAndShifts() {

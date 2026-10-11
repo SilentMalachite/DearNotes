@@ -375,6 +375,26 @@ class PageEditorUiTest {
     }
 
     @Test
+    void pageLinkAtLineStartDoesNotBecomeMarkdownShortcut() throws Exception {
+        var rule = pages.create(null, "---");
+        var hash = pages.create(null, "#");
+        focusFirstBlock();
+        type("[[--");
+        press(KeyCode.ENTER);
+        assertEquals(List.of("paragraph:0:---"), summary());
+        assertEquals(List.of(new Mark(0, 3, Mark.Style.PAGE, rule.id())), fx(() -> current().block().marks()));
+        fx(() -> {
+            current().setContent("", List.of());
+            return null;
+        });
+        type("[[#");
+        press(KeyCode.ENTER);
+        type(" ");
+        assertEquals(List.of("paragraph:0:# "), summary());
+        assertEquals(List.of(new Mark(0, 1, Mark.Style.PAGE, hash.id())), fx(() -> current().block().marks()));
+    }
+
+    @Test
     void unknownNameCreatesChildPageAndStaysHere() throws Exception {
         focusFirstBlock();
         String here = fx(() -> window.editor().page().id());
