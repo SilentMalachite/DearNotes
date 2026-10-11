@@ -8,6 +8,7 @@
 
 - Apache License 2.0 で公開（`LICENSE`、`NOTICE`）
 - サードパーティのライセンス一覧、変更履歴、貢献ガイド、セキュリティポリシー
+- タグを push すると、インストーラーを付けた GitHub Release を自動で作る（本文は CHANGELOG.md から）
 
 ## [1.0.1] - 2026-10-11
 

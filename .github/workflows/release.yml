@@ -1,6 +1,6 @@
 name: release
 
-# v1.2.3 のようなタグを push すると、各 OS でインストーラーを作る
+# v1.2.3 のようなタグを push すると、各 OS でインストーラーを作り、GitHub Release に付ける
 on:
   push:
     tags: ['v*']
@@ -31,3 +31,42 @@ jobs:
         with:
           name: DearNotes-${{ matrix.os }}
           path: build/jpackage/*
+
+  # タグのときだけ、両方のインストーラーを付けた GitHub Release を作る。
+  # 手で動かしたとき（workflow_dispatch）は Artifacts だけ。
+  release:
+    needs: package
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check tag matches version
+        id: version
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          version="$(sed -n 's/^version = "\(.*\)"$/\1/p' build.gradle.kts)"
+          if [ "$tag" != "$version" ]; then
+            echo "::error::タグ $GITHUB_REF_NAME と build.gradle.kts の version ($version) が合いません"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          .github/scripts/release-notes.sh "$VERSION" > notes.md
+          ls -l dist
+          if gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1; then
+            # 作り直したときは、インストーラーだけ差し替える
+            gh release upload "$GITHUB_REF_NAME" dist/* --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" dist/* --verify-tag \
+              --title "DearNotes $VERSION" --notes-file notes.md
+          fi
