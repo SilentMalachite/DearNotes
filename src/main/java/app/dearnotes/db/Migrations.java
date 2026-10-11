@@ -56,6 +56,10 @@ final class Migrations {
               INSERT INTO blocks_fts(blocks_fts, rowid, text) VALUES ('delete', old.rowid, old.text);
               INSERT INTO blocks_fts(rowid, text) VALUES (new.rowid, new.text);
             END"""
+        ),
+        // v2: 子の行を畳んでいるか。種類は変えないので表は作り直さない
+        List.of(
+            "ALTER TABLE blocks ADD COLUMN collapsed INTEGER NOT NULL DEFAULT 0"
         )
     );
 
@@ -66,6 +70,11 @@ final class Migrations {
     }
 
     static void apply(Connection conn) throws SQLException {
+        apply(conn, STEPS.size());
+    }
+
+    /** target の版まで進める。古い版からの移行を確かめるテスト用。 */
+    static void apply(Connection conn, int target) throws SQLException {
         int current;
         try (var s = conn.createStatement(); var rs = s.executeQuery("PRAGMA user_version")) {
             current = rs.next() ? rs.getInt(1) : 0;
@@ -76,7 +85,7 @@ final class Migrations {
         boolean auto = conn.getAutoCommit();
         conn.setAutoCommit(false);
         try (var s = conn.createStatement()) {
-            for (int v = current; v < STEPS.size(); v++) {
+            for (int v = current; v < target; v++) {
                 for (String sql : STEPS.get(v)) s.execute(sql);
                 s.execute("PRAGMA user_version = " + (v + 1));
             }

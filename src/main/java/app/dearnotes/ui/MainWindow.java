@@ -8,6 +8,7 @@ import java.util.prefs.Preferences;
 import java.util.stream.Collectors;
 import javafx.geometry.Pos;
 import javafx.scene.Scene;
+import javafx.scene.control.Button;
 import javafx.scene.control.Label;
 import javafx.scene.control.ScrollPane;
 import javafx.scene.control.SplitPane;
@@ -33,7 +34,9 @@ public final class MainWindow implements Sidebar.Actions {
     private final Preferences prefs = Preferences.userNodeForPackage(MainWindow.class);
     private final Sidebar sidebar;
     private final PageEditor editor;
+    private final OutlinePanel outline;
     private final Label breadcrumb = new Label();
+    private final Button outlineButton = new Button("☰ 目次");
     private final SaveIndicator saveIndicator = new SaveIndicator();
     private SearchDialog searchDialog;
     private TrashDialog trashDialog;
@@ -43,11 +46,19 @@ public final class MainWindow implements Sidebar.Actions {
         this.s = services;
         this.sidebar = new Sidebar(services, this);
         this.editor = new PageEditor(services, this::pageChanged);
+        this.outline = new OutlinePanel(editor::jumpTo);
+        // 目次は初めは閉じておく
+        outline.setVisible(false);
+        outline.setManaged(false);
+        editor.setOutlineListener(this::refreshOutline);
 
         breadcrumb.getStyleClass().add("breadcrumb");
+        outlineButton.getStyleClass().add("outline-button");
+        outlineButton.setFocusTraversable(false);
+        outlineButton.setOnAction(e -> toggleOutline());
         var spacer = new Region();
         HBox.setHgrow(spacer, Priority.ALWAYS);
-        var header = new HBox(8, breadcrumb, spacer, saveIndicator);
+        var header = new HBox(8, breadcrumb, spacer, saveIndicator, outlineButton);
         header.getStyleClass().add("page-header");
         header.setAlignment(Pos.CENTER_LEFT);
 
@@ -63,6 +74,7 @@ public final class MainWindow implements Sidebar.Actions {
 
         var main = new BorderPane(scroll);
         main.setTop(header);
+        main.setRight(outline);
         var split = new SplitPane(sidebar, main);
         split.setDividerPositions(0.24);
         SplitPane.setResizableWithParent(sidebar, false);
@@ -74,6 +86,8 @@ public final class MainWindow implements Sidebar.Actions {
         scene.getAccelerators().put(new KeyCodeCombination(KeyCode.N, KeyCombination.SHORTCUT_DOWN), () -> newPage(null));
         scene.getAccelerators().put(
             new KeyCodeCombination(KeyCode.D, KeyCombination.SHORTCUT_DOWN, KeyCombination.SHIFT_DOWN), this::openToday);
+        scene.getAccelerators().put(
+            new KeyCodeCombination(KeyCode.O, KeyCombination.SHORTCUT_DOWN, KeyCombination.SHIFT_DOWN), this::toggleOutline);
         stage.setScene(scene);
         stage.setTitle("DearNotes");
         stage.setMinWidth(640);
@@ -112,6 +126,24 @@ public final class MainWindow implements Sidebar.Actions {
 
     Sidebar sidebar() {
         return sidebar;
+    }
+
+    OutlinePanel outline() {
+        return outline;
+    }
+
+    /** 本文の右の目次を出し入れする。 */
+    void toggleOutline() {
+        boolean show = !outline.isVisible();
+        outline.setVisible(show);
+        outline.setManaged(show);
+        outlineButton.getStyleClass().remove("active");
+        if (show) outlineButton.getStyleClass().add("active");
+        refreshOutline();
+    }
+
+    private void refreshOutline() {
+        if (outline.isVisible()) outline.show(editor.headings(), editor.currentHeadingId());
     }
 
     /** 起動時: 前回のページ、なければ今日の日記を開く。 */

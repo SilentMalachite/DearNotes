@@ -31,11 +31,24 @@ public final class BlockOps {
         return SortKeys.between(prev, next);
     }
 
-    /** from を取り除いてから、残りの並びで insertAt の位置に入れるためのキー。 */
-    public static Double keyForMove(List<Block> blocks, int from, int insertAt) {
+    /**
+     * from から count 行を取り除いてから、残りの並びで insertAt の位置にまとめて入れるためのキー。
+     * 間に収まらなければ null（全体を振り直す）。
+     */
+    public static List<Double> keysForMove(List<Block> blocks, int from, int count, int insertAt) {
         var rest = new java.util.ArrayList<>(blocks);
-        rest.remove(from);
+        rest.subList(from, from + count).clear();
         int target = Math.clamp(insertAt, 0, rest.size());
-        return keyAfter(rest, target - 1);
+        double lo = target > 0 ? rest.get(target - 1).sortKey() : 0;
+        double hi = target < rest.size() ? rest.get(target).sortKey() : lo + SortKeys.GAP * (count + 1);
+        var keys = new java.util.ArrayList<Double>(count);
+        double prev = lo;
+        for (int i = 0; i < count; i++) {
+            double k = lo + (hi - lo) * (i + 1) / (count + 1);
+            if (k <= prev || k >= hi) return null;
+            keys.add(k);
+            prev = k;
+        }
+        return keys;
     }
 }

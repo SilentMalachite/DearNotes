@@ -56,4 +56,14 @@ class BlockRepoTest extends DbTestBase {
         blocks.save(List.of(Block.empty(p.id(), BlockType.PARAGRAPH, 1)), List.of());
         assertTrue(pages.get(p.id()).orElseThrow().updatedAt() > p.updatedAt());
     }
+
+    @Test
+    void savesCollapsedState() throws Exception {
+        Page p = pages.create(null, "x");
+        Block b = Block.empty(p.id(), BlockType.H2, 1024).withContent("1日目", List.of()).withCollapsed(true);
+        blocks.save(List.of(b), List.of());
+        assertTrue(blocks.listByPage(p.id()).getFirst().collapsed());
+        blocks.save(List.of(b.withCollapsed(false)), List.of());
+        assertFalse(blocks.listByPage(p.id()).getFirst().collapsed());
+    }
 }

@@ -433,6 +433,225 @@ class PageEditorUiTest {
         assertNotEquals(tokyo.id(), opened.getFirst());
     }
 
+    @Test
+    void foldingHeadingHidesItsSectionAndIsKeptAfterReopening() throws Exception {
+        focusFirstBlock();
+        type("## 1日目");
+        press(KeyCode.ENTER);
+        type("伏見稲荷");
+        press(KeyCode.ENTER);
+        type("お昼");
+        press(KeyCode.ENTER);
+        type("## 2日目");
+        press(KeyCode.ENTER);
+        type("嵐山");
+        focusEndOf(0);
+
+        press(KeyCode.ENTER, KeyMod.SHORTCUT);
+        assertEquals(List.of("h2:0:1日目", "h2:0:2日目", "paragraph:0:嵐山"), visibleSummary());
+
+        // 畳んだ見出しで Enter: 隠れた行の後に同じ段の見出しが入り、節は閉じたまま
+        press(KeyCode.ENTER);
+        assertEquals(List.of("h2:0:1日目", "h2:0:", "h2:0:2日目", "paragraph:0:嵐山"), visibleSummary());
+        assertEquals(3, fx(() -> window.editor().views().indexOf(current())));
+        // すぐ Backspace で消しても、節は開かない
+        press(KeyCode.BACK_SPACE);
+        assertEquals(List.of("h2:0:1日目", "h2:0:2日目", "paragraph:0:嵐山"), visibleSummary());
+        assertEquals("1日目", fx(() -> current().block().text()));
+
+        assertTrue(saver.flushAndWait(2, TimeUnit.SECONDS));
+        String pageId = fx(() -> window.editor().page().id());
+        assertTrue(blocks.listByPage(pageId).getFirst().collapsed());
+        reopen(pageId);
+        assertEquals(List.of("h2:0:1日目", "h2:0:2日目", "paragraph:0:嵐山"), visibleSummary());
+
+        focusEndOf(0);
+        press(KeyCode.ENTER, KeyMod.SHORTCUT);
+        assertEquals(5, visibleSummary().size());
+    }
+
+    @Test
+    void arrowsSkipHiddenRowsAndEnterAddsAfterThem() throws Exception {
+        typeBookList();
+        focusEndOf(0);
+        press(KeyCode.ENTER, KeyMod.SHORTCUT);
+        assertEquals(List.of("bullet:0:読む本", "bullet:0:電池"), visibleSummary());
+
+        press(KeyCode.DOWN);
+        assertEquals("電池", fx(() -> current().block().text()));
+        press(KeyCode.UP);
+        assertEquals("読む本", fx(() -> current().block().text()));
+
+        press(KeyCode.ENTER);
+        assertEquals(List.of("bullet:0:読む本", "bullet:1:古都", "bullet:1:檸檬", "bullet:0:", "bullet:0:電池"),
+            summary());
+        assertEquals(3, fx(() -> window.editor().views().indexOf(current())));
+        assertTrue(fx(() -> window.editor().views().getFirst().block().collapsed()));
+    }
+
+    @Test
+    void movingCollapsedRowMovesHiddenRowsWithIt() throws Exception {
+        typeBookList();
+        focusEndOf(0);
+        press(KeyCode.ENTER, KeyMod.SHORTCUT);
+        press(KeyCode.DOWN, KeyMod.SHORTCUT, KeyMod.SHIFT);
+        assertEquals(List.of("bullet:0:電池", "bullet:0:読む本", "bullet:1:古都", "bullet:1:檸檬"), summary());
+        assertEquals("読む本", fx(() -> current().block().text()));
+
+        assertTrue(saver.flushAndWait(2, TimeUnit.SECONDS));
+        String pageId = fx(() -> window.editor().page().id());
+        assertEquals(List.of("電池", "読む本", "古都", "檸檬"),
+            blocks.listByPage(pageId).stream().map(Block::text).toList());
+
+        // 上の行は、畳んだまとまりごと飛び越える
+        focusEndOf(0);
+        press(KeyCode.DOWN, KeyMod.SHORTCUT, KeyMod.SHIFT);
+        assertEquals(List.of("bullet:0:読む本", "bullet:1:古都", "bullet:1:檸檬", "bullet:0:電池"), summary());
+    }
+
+    @Test
+    void outlineListsHeadingsAndJumpOpensCollapsedSection() throws Exception {
+        focusFirstBlock();
+        type("# 京都旅行");
+        press(KeyCode.ENTER);
+        type("## 1日目");
+        press(KeyCode.ENTER);
+        type("### 午前");
+        press(KeyCode.ENTER);
+        type("伏見稲荷");
+        focusEndOf(1);
+        press(KeyCode.ENTER, KeyMod.SHORTCUT);
+        assertEquals(List.of("h1:0:京都旅行", "h2:0:1日目"), visibleSummary());
+
+        fx(() -> {
+            window.toggleOutline();
+            return null;
+        });
+        assertEquals(List.of("京都旅行", "1日目", "午前"),
+            fx(() -> window.outline().items().stream().map(javafx.scene.control.Label::getText).toList()));
+
+        fx(() -> {
+            var item = window.outline().items().get(2);
+            item.fireEvent(new javafx.scene.input.MouseEvent(
+                javafx.scene.input.MouseEvent.MOUSE_CLICKED, 0, 0, 0, 0,
+                javafx.scene.input.MouseButton.PRIMARY, 1,
+                false, false, false, false, true, false, false, false, false, false, null));
+            return null;
+        });
+        settle();
+        assertEquals(4, visibleSummary().size());
+        assertEquals("午前", fx(() -> current().block().text()));
+        assertEquals(List.of("午前"), fx(() -> window.outline().items().stream()
+            .filter(l -> l.getStyleClass().contains("current")).map(javafx.scene.control.Label::getText).toList()));
+    }
+
+    @Test
+    void collapsedRowWithoutChildrenLosesItsMark() throws Exception {
+        var p = pages.create(null, "子のない行");
+        blocks.save(List.of(Block.empty(p.id(), BlockType.BULLET, 1024).withContent("ひとり", List.of())
+            .withCollapsed(true)), List.of());
+        reopen(p.id());
+        assertFalse(fx(() -> window.editor().views().getFirst().block().collapsed()));
+        assertFalse(fx(() -> window.editor().views().getFirst().foldable()));
+        assertTrue(saver.flushAndWait(2, TimeUnit.SECONDS));
+        assertFalse(blocks.listByPage(p.id()).getFirst().collapsed());
+    }
+
+    @Test
+    void movingCollapsedRowDoesNotHideRowsThatWereVisible() throws Exception {
+        openRows(
+            row(BlockType.BULLET, 0, "S", false), row(BlockType.BULLET, 1, "S1", false),
+            row(BlockType.BULLET, 0, "R", true), row(BlockType.BULLET, 1, "R1", false));
+        assertEquals(List.of("bullet:0:S", "bullet:1:S1", "bullet:0:R"), visibleSummary());
+        focusEndOf(2);
+        press(KeyCode.UP, KeyMod.SHORTCUT, KeyMod.SHIFT);
+        // S1 は R の子の位置に入るが、隠さずに R を開く
+        assertEquals(List.of("bullet:0:S", "bullet:0:R", "bullet:1:R1", "bullet:1:S1"), visibleSummary());
+    }
+
+    @Test
+    void removingEmptyHeadingAfterCollapsedSectionKeepsFollowingRowsVisible() throws Exception {
+        openRows(
+            row(BlockType.H2, 0, "A", true), row(BlockType.PARAGRAPH, 0, "a1", false),
+            row(BlockType.H2, 0, "", false), row(BlockType.PARAGRAPH, 0, "b1", false));
+        fx(() -> {
+            window.editor().views().get(2).focusAt(0);
+            return null;
+        });
+        settle();
+        press(KeyCode.BACK_SPACE);
+        assertTrue(visibleSummary().contains("paragraph:0:b1"));
+    }
+
+    @Test
+    void outdentingCollapsedRowDoesNotHideFollowingSibling() throws Exception {
+        openRows(
+            row(BlockType.BULLET, 0, "Q", false), row(BlockType.BULLET, 1, "R", true),
+            row(BlockType.BULLET, 2, "R1", false), row(BlockType.BULLET, 1, "T", false));
+        focusEndOf(1);
+        press(KeyCode.TAB, KeyMod.SHIFT);
+        assertTrue(visibleSummary().contains("bullet:1:T"));
+    }
+
+    @Test
+    void clickingBelowCollapsedLastSectionKeepsItClosed() throws Exception {
+        openRows(
+            row(BlockType.H2, 0, "A", false), row(BlockType.PARAGRAPH, 0, "a1", false),
+            row(BlockType.H2, 0, "B", true), row(BlockType.PARAGRAPH, 0, "b1", false));
+        fx(() -> {
+            window.editor().clickBelowLastBlock();
+            return null;
+        });
+        settle();
+        // 段落だと B の節に入って開いてしまうので、同じ段の見出しを足す
+        assertEquals(List.of("h2:0:A", "paragraph:0:a1", "h2:0:B", "h2:0:"), visibleSummary());
+        assertTrue(fx(() -> window.editor().views().get(2).block().collapsed()));
+        assertEquals(4, fx(() -> window.editor().views().indexOf(current())));
+    }
+
+    @Test
+    void clickingBelowCollapsedLastItemAddsParagraphAfterHiddenRows() throws Exception {
+        openRows(row(BlockType.BULLET, 0, "R", true), row(BlockType.BULLET, 1, "R1", false));
+        fx(() -> {
+            window.editor().clickBelowLastBlock();
+            return null;
+        });
+        settle();
+        assertEquals(List.of("bullet:0:R", "paragraph:0:"), visibleSummary());
+        assertTrue(fx(() -> window.editor().views().getFirst().block().collapsed()));
+    }
+
+    @Test
+    void movingCollapsedHeadingTakesIndentedHeadingUnderItsItem() throws Exception {
+        String pageId = openRows(
+            row(BlockType.H2, 0, "A", true), row(BlockType.BULLET, 0, "B", true),
+            row(BlockType.H2, 1, "C", false), row(BlockType.PARAGRAPH, 1, "D", false),
+            row(BlockType.H1, 0, "E", false));
+        assertEquals(List.of("h2:0:A", "h1:0:E"), visibleSummary());
+        focusEndOf(0);
+        press(KeyCode.DOWN, KeyMod.SHORTCUT, KeyMod.SHIFT);
+        assertEquals(List.of("h1:0:E", "h2:0:A", "bullet:0:B", "h2:1:C", "paragraph:1:D"), summary());
+        assertTrue(saver.flushAndWait(2, TimeUnit.SECONDS));
+        assertEquals(List.of("E", "A", "B", "C", "D"),
+            blocks.listByPage(pageId).stream().map(Block::text).toList());
+    }
+
+    @Test
+    void pastingIntoHeadingKeepsOutlineInSync() throws Exception {
+        openRows(row(BlockType.H2, 0, "AB", false));
+        fx(() -> {
+            window.toggleOutline();
+            BlockView v = window.editor().views().getFirst();
+            v.focusAt(1);
+            window.editor().pasteLines(v, "x\n");
+            return null;
+        });
+        settle();
+        assertEquals("AxB", fx(() -> window.editor().views().getFirst().block().text()));
+        assertEquals(List.of("AxB"),
+            fx(() -> window.outline().items().stream().map(javafx.scene.control.Label::getText).toList()));
+    }
+
     // ---- helpers ----
 
     enum KeyMod { SHIFT, SHORTCUT }
@@ -443,6 +662,69 @@ class PageEditorUiTest {
             return null;
         });
         settle();
+    }
+
+    private void focusEndOf(int index) throws Exception {
+        fx(() -> {
+            window.editor().views().get(index).focusEnd();
+            return null;
+        });
+        settle();
+    }
+
+    /** 読む本 / 古都(字下げ) / 檸檬(字下げ) / 電池 の箇条書き。 */
+    private void typeBookList() throws Exception {
+        focusFirstBlock();
+        type("- 読む本");
+        press(KeyCode.ENTER);
+        type("古都");
+        press(KeyCode.TAB);
+        press(KeyCode.ENTER);
+        type("檸檬");
+        press(KeyCode.ENTER);
+        press(KeyCode.ENTER);          // 空の項目で Enter → 字下げを戻す
+        type("電池");
+        assertEquals(List.of("bullet:0:読む本", "bullet:1:古都", "bullet:1:檸檬", "bullet:0:電池"), summary());
+    }
+
+    private void reopen(String pageId) throws Exception {
+        fx(() -> {
+            window.openToday();
+            return null;
+        });
+        settle();
+        fx(() -> {
+            window.open(pages.get(pageId).orElseThrow());
+            return null;
+        });
+        settle();
+    }
+
+    private record Row(BlockType type, int indent, String text, boolean collapsed) {}
+
+    private static Row row(BlockType type, int indent, String text, boolean collapsed) {
+        return new Row(type, indent, text, collapsed);
+    }
+
+    /** 行を DB に入れたページを作って開く。 */
+    private String openRows(Row... rows) throws Exception {
+        var p = pages.create(null, "行");
+        var list = new java.util.ArrayList<Block>();
+        for (int i = 0; i < rows.length; i++) {
+            Row r = rows[i];
+            list.add(Block.empty(p.id(), r.type(), (i + 1) * 1024.0).withIndent(r.indent())
+                .withContent(r.text(), List.of()).withCollapsed(r.collapsed()));
+        }
+        blocks.save(list, List.of());
+        reopen(p.id());
+        return p.id();
+    }
+
+    private List<String> visibleSummary() throws Exception {
+        return fx(() -> window.editor().views().stream()
+            .filter(v -> !v.hidden())
+            .map(v -> v.block().type().dbName() + ":" + v.block().indent() + ":" + v.block().text())
+            .toList());
     }
 
     private BlockView current() {

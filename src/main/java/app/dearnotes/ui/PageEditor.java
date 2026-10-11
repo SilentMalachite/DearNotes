@@ -2,6 +2,7 @@ package app.dearnotes.ui;
 
 import app.dearnotes.editor.BlockOps;
 import app.dearnotes.editor.Marks;
+import app.dearnotes.editor.Outline;
 import app.dearnotes.editor.PasteParser;
 import app.dearnotes.editor.SlashCommands.Command;
 import app.dearnotes.model.Block;
@@ -46,6 +47,8 @@ final class PageEditor extends VBox implements BlockView.Host {
     private ScrollPane scrollPane;
     private Page page;
     private BlockView dragging;
+    private BlockView lastFocused;
+    private Runnable outlineListener = () -> {};
     private boolean loadingTitle;
 
     PageEditor(Services services, Consumer<Page> onPageChanged) {
@@ -94,6 +97,35 @@ final class PageEditor extends VBox implements BlockView.Host {
         return List.copyOf(views);
     }
 
+    /** 見出しや並び、カーソルのある節が変わったときに呼ぶ。目次を作り直すため。 */
+    void setOutlineListener(Runnable listener) {
+        outlineListener = listener;
+    }
+
+    List<Outline.Heading> headings() {
+        return Outline.headings(blocks());
+    }
+
+    /** カーソルのある行が入っている節の見出し。なければ null。 */
+    String currentHeadingId() {
+        int idx = views.indexOf(lastFocused);
+        if (idx < 0) return null;
+        List<Block> blocks = blocks();
+        int h = Outline.currentHeading(blocks, idx);
+        return h < 0 ? null : blocks.get(h).id();
+    }
+
+    /** 目次から見出しへ移る。畳んだ節に入っていれば、先に開く。 */
+    void jumpTo(String blockId) {
+        views.stream().filter(v -> v.block().id().equals(blockId)).findFirst().ifPresent(v -> {
+            lastFocused = v;
+            reveal(v);
+            v.focusEnd();
+            outlineListener.run();
+            Platform.runLater(() -> scrollToTop(v));
+        });
+    }
+
     /**
      * ほかのページへ移る前に、名前と書きかけの変更を DB に入れる。
      * 書けなかったら知らせて false。そのときはページを作ったり戻したりもしない。
@@ -126,13 +158,14 @@ final class PageEditor extends VBox implements BlockView.Host {
 
         views.clear();
         blockBox.getChildren().clear();
+        lastFocused = null;
         for (Block b : loaded.get()) addView(views.size(), b);
         if (views.isEmpty()) {
             Block first = Block.empty(page.id(), BlockType.PARAGRAPH, SortKeys.GAP);
             addView(0, first);
             s.saver().changed(first);
         }
-        refreshNumbers();
+        refreshLayout(false);
         if (scrollPane != null) scrollPane.setVvalue(0);
 
         Page opened = page;
@@ -140,8 +173,9 @@ final class PageEditor extends VBox implements BlockView.Host {
             if (focusBlockId != null) {
                 views.stream().filter(v -> v.block().id().equals(focusBlockId)).findFirst()
                     .ifPresent(v -> {
+                        reveal(v);
                         v.focusEnd();
-                        ensureVisible(v);
+                        Platform.runLater(() -> ensureVisible(v));
                     });
             } else if (opened.title().isBlank() && !opened.isDaily()) {
                 title.requestFocus();
@@ -175,6 +209,7 @@ final class PageEditor extends VBox implements BlockView.Host {
     public void edited(BlockView v) {
         s.saver().changed(v.block());
         if (v.block().type() == BlockType.NUMBERED) refreshNumbers();
+        if (Outline.level(v.block().type()) > 0) outlineListener.run();
     }
 
     @Override
@@ -203,10 +238,18 @@ final class PageEditor extends VBox implements BlockView.Host {
         v.setContent(left, Marks.slice(marks, 0, caret));
         s.saver().changed(v.block());
 
-        Block next = Block.empty(page.id(), b.type() == BlockType.DIVIDER ? BlockType.PARAGRAPH : b.type().next(), 0)
+        BlockType type = b.type() == BlockType.DIVIDER ? BlockType.PARAGRAPH : b.type().next();
+        int at = idx + 1;
+        if (b.collapsed()) {
+            // 畳んだ行で分けたら、隠れた行の後に入れる。
+            // 見出しの後に段落を入れるとその節に入って隠れるので、同じ段の見出しにする
+            at = Outline.end(blocks(), idx);
+            if (Outline.level(b.type()) > 0) type = b.type();
+        }
+        Block next = Block.empty(page.id(), type, 0)
             .withIndent(b.indent())
             .withContent(right, Marks.slice(marks, caret, text.length()));
-        BlockView nv = insertBlock(idx + 1, next);
+        BlockView nv = insertBlock(at, next);
         nv.focusAt(0);
     }
 
@@ -220,6 +263,13 @@ final class PageEditor extends VBox implements BlockView.Host {
             return;
         }
         if (b.type() != BlockType.PARAGRAPH) {
+            if (v.text().isEmpty() && wouldBeHidden(idx, b.withType(BlockType.PARAGRAPH))) {
+                // 畳んだ節の後の空の見出しは、段落にすると節に入って開いてしまう。そのまま消す
+                // （後ろに本文があれば、それを隠さないよう refreshLayout が節を開く）
+                remove(v);
+                focusNear(idx - 1, true);
+                return;
+            }
             change(v, b.withType(BlockType.PARAGRAPH));
             return;
         }
@@ -235,6 +285,8 @@ final class PageEditor extends VBox implements BlockView.Host {
             return;
         }
         BlockView prev = views.get(idx - 1);
+        // 前の行が畳んだ節に隠れていたら、先に開いてから結合する
+        reveal(prev);
         if (prev.block().type() == BlockType.DIVIDER) {
             remove(prev);
             return;
@@ -253,6 +305,8 @@ final class PageEditor extends VBox implements BlockView.Host {
         }
         if (idx + 1 >= views.size()) return;
         BlockView next = views.get(idx + 1);
+        // 次の行が隠れていたら（この行を畳んでいたら）、先に開いてから結合する
+        reveal(next);
         if (next.block().type() == BlockType.DIVIDER) {
             remove(next);
             return;
@@ -262,45 +316,63 @@ final class PageEditor extends VBox implements BlockView.Host {
         v.focusAt(caret);
     }
 
-    @Override
     public void indent(BlockView v, int delta) {
         Block b = v.block();
         int idx = views.indexOf(v);
         // 1つ上より2段以上深くはしない
         int max = idx == 0 ? 0 : views.get(idx - 1).block().indent() + 1;
-        int next = Math.clamp(b.indent() + delta, 0, Math.min(max, Block.MAX_INDENT));
+        // 畳んだ行は隠れた行も一緒に字下げを変える。見出しの節は字下げで決まらないので自分だけ
+        boolean withChildren = b.collapsed() && Outline.level(b.type()) == 0;
+        int end = withChildren ? Outline.end(blocks(), idx) : idx + 1;
+        int deepest = b.indent();
+        for (int i = idx + 1; i < end; i++) deepest = Math.max(deepest, views.get(i).block().indent());
+        int next = Math.clamp(b.indent() + delta, 0, Math.min(max, Block.MAX_INDENT - (deepest - b.indent())));
         if (next == b.indent()) return;
+        int d = next - b.indent();
+        for (int i = idx + 1; i < end; i++) {
+            BlockView c = views.get(i);
+            c.setBlock(c.block().withIndent(c.block().indent() + d));
+            s.saver().changed(c.block());
+        }
         change(v, b.withIndent(next));
     }
 
-    @Override
     public void focusPrevious(BlockView v) {
-        int idx = views.indexOf(v);
-        if (idx > 0) {
-            views.get(idx - 1).focusEnd();
-            ensureVisible(views.get(idx - 1));
+        int idx = visibleBefore(views.indexOf(v));
+        if (idx >= 0) {
+            views.get(idx).focusEnd();
+            ensureVisible(views.get(idx));
         } else {
             title.requestFocus();
             title.end();
         }
     }
 
-    @Override
     public void focusNext(BlockView v) {
-        int idx = views.indexOf(v);
-        if (idx + 1 < views.size()) {
-            views.get(idx + 1).focusAt(0);
-            ensureVisible(views.get(idx + 1));
+        int idx = visibleAfter(views.indexOf(v));
+        if (idx >= 0) {
+            views.get(idx).focusAt(0);
+            ensureVisible(views.get(idx));
         }
     }
 
-    @Override
     public void moveBy(BlockView v, int delta) {
         int from = views.indexOf(v);
-        int to = from + delta;
-        if (to < 0 || to >= views.size()) return;
+        int count = groupSize(from);
+        // 隣の畳んだ行は、隠れた行ごと飛び越える
+        int insertAt;
+        if (delta < 0) {
+            insertAt = visibleBefore(from);
+            if (insertAt < 0) return;
+        } else {
+            int below = from + count;
+            if (below >= views.size()) return;
+            int end = below + groupSize(below);
+            while (end < views.size() && views.get(end).hidden()) end++;
+            insertAt = end - count;
+        }
         int caret = v.caret();
-        move(v, to);
+        move(v, insertAt);
         v.focusAt(caret);
         ensureVisible(v);
     }
@@ -374,7 +446,8 @@ final class PageEditor extends VBox implements BlockView.Host {
             List<Mark> marks = last.block().type() == BlockType.CODE
                 ? List.of() : Marks.concat(last.block().marks(), end, tailMarks);
             last.setContent(last.text() + tail, marks);
-            s.saver().changed(last.block());
+            // setContent は編集の知らせを出さないので、保存と目次の更新をここでする
+            edited(last);
         }
         last.focusAt(end);
         ensureVisible(last);
@@ -397,9 +470,10 @@ final class PageEditor extends VBox implements BlockView.Host {
         scrollPane.setVvalue(Math.clamp(v, 0, 1));
     }
 
-    @Override
     public void focused(BlockView v) {
         if (slash.isShowing() && slash.target() != v) slash.hide();
+        lastFocused = v;
+        outlineListener.run();
     }
 
     @Override
@@ -418,6 +492,21 @@ final class PageEditor extends VBox implements BlockView.Host {
         e.consume();
     }
 
+    @Override
+    public void toggleFold(BlockView v) {
+        int idx = views.indexOf(v);
+        if (idx < 0 || !Outline.hasChildren(blocks(), idx)) return;
+        boolean collapse = !v.block().collapsed();
+        int end = Outline.end(blocks(), idx);
+        int focused = views.indexOf(lastFocused);
+        boolean focusInside = collapse && focused > idx && focused < end
+            && lastFocused.area().isFocused();
+        setCollapsed(v, collapse);
+        refreshLayout(false);
+        // 隠れる行にカーソルがあったら、畳んだ行へ移す
+        if (focusInside) v.focusEnd();
+    }
+
     // ---- 並べ替えと変更 ----
 
     private void applySlash(BlockView v, Command c) {
@@ -426,9 +515,11 @@ final class PageEditor extends VBox implements BlockView.Host {
     }
 
     private void change(BlockView v, Block b) {
+        // 見出しの段が変わると範囲の決め方も変わるので、畳んだ印を外す
+        if (b.collapsed() && Outline.level(b.type()) != Outline.level(v.block().type())) b = b.withCollapsed(false);
         v.setBlock(b);
         s.saver().changed(v.block());
-        refreshNumbers();
+        refreshLayout();
     }
 
     private void mergeInto(BlockView target, BlockView source) {
@@ -450,7 +541,7 @@ final class PageEditor extends VBox implements BlockView.Host {
         Block placed = b.withSortKey(key);
         BlockView v = addView(index, placed);
         s.saver().changed(placed);
-        refreshNumbers();
+        refreshLayout();   // 畳んだ節の中に入ったら、新しい行が見えるように開く
         Platform.runLater(() -> ensureVisible(v));
         return v;
     }
@@ -464,25 +555,33 @@ final class PageEditor extends VBox implements BlockView.Host {
             addView(0, first).focusAt(0);
             s.saver().changed(first);
         }
-        refreshNumbers();
+        refreshLayout();
     }
 
-    /** v を insertAt の位置に移す。書き換わるのは v の sort_key だけ。 */
+    /**
+     * v を insertAt の位置に移す。insertAt は動かす行を抜いた後の並びでの位置。
+     * 畳んだ行は隠れた行と一緒に動く。書き換わるのは動かした行の sort_key だけ。
+     */
     private void move(BlockView v, int insertAt) {
         int from = views.indexOf(v);
-        Double key = BlockOps.keyForMove(blocks(), from, insertAt);
-        if (key == null) {
+        int count = groupSize(from);
+        List<Double> keys = BlockOps.keysForMove(blocks(), from, count, insertAt);
+        if (keys == null) {
             respace();
-            key = BlockOps.keyForMove(blocks(), from, insertAt);
+            keys = BlockOps.keysForMove(blocks(), from, count, insertAt);
         }
-        views.remove(from);
-        blockBox.getChildren().remove(v);
+        var group = new ArrayList<>(views.subList(from, from + count));
+        views.subList(from, from + count).clear();
+        blockBox.getChildren().removeAll(group);
         int at = Math.clamp(insertAt, 0, views.size());
-        views.add(at, v);
-        blockBox.getChildren().add(at, v);
-        v.setBlock(v.block().withSortKey(key));
-        s.saver().changed(v.block());
-        refreshNumbers();
+        views.addAll(at, group);
+        blockBox.getChildren().addAll(at, group);
+        for (int i = 0; i < count; i++) {
+            BlockView g = group.get(i);
+            g.setBlock(g.block().withSortKey(keys.get(i)));
+            s.saver().changed(g.block());
+        }
+        refreshLayout();
     }
 
     /** 間が詰まったら、ページの全ブロックを GAP 間隔で振り直す。 */
@@ -518,9 +617,14 @@ final class PageEditor extends VBox implements BlockView.Host {
         boolean above = e.getY() < v.getHeight() / 2;
         v.setDropHint(null);
         int from = views.indexOf(dragging);
-        int target = views.indexOf(v) + (above ? 0 : 1);
-        if (target > from) target--;   // 自分を抜いた後の位置
-        move(dragging, target);
+        int count = groupSize(from);
+        int on = views.indexOf(v);
+        // 畳んだ行の下に落としたら、隠れた行の後に入れる
+        int target = above ? on : on + groupSize(on);
+        // 自分たちの中や、すぐ前後に落としたときは動かさない
+        if (target < from || target > from + count) {
+            move(dragging, target > from ? target - count : target);
+        }
         e.setDropCompleted(true);
         e.consume();
     }
@@ -532,25 +636,108 @@ final class PageEditor extends VBox implements BlockView.Host {
         }
     }
 
+    /** 並びが変わったら呼ぶ。見えていた行は隠さない（足した行、動かした行、字下げの変わった行も）。 */
+    private void refreshLayout() {
+        refreshLayout(true);
+    }
+
+    /**
+     * 番号、畳める行と隠す行、目次を今の並びに合わせる。
+     * keepVisible のときは、見えていた行が畳んだ範囲に入ったら、その範囲を開いて見えたままにする。
+     * 畳む操作とページを開いたときだけ false にする。
+     */
+    private void refreshLayout(boolean keepVisible) {
+        refreshNumbers();
+        List<Block> blocks = blocks();
+        for (int i = 0; i < views.size(); i++) {
+            BlockView v = views.get(i);
+            boolean foldable = Outline.hasChildren(blocks, i);
+            // 子をなくした行は、畳んだ印を自分で外す
+            if (!foldable && v.block().collapsed()) setCollapsed(v, false);
+            v.setFoldable(foldable);
+        }
+        blocks = blocks();
+        boolean[] hidden = Outline.hidden(blocks);
+        if (keepVisible) {
+            var open = new java.util.HashSet<Integer>();
+            for (int i = 0; i < views.size(); i++) {
+                if (hidden[i] && !views.get(i).hidden()) open.addAll(Outline.hiders(blocks, i));
+            }
+            if (!open.isEmpty()) {
+                for (int i : open) setCollapsed(views.get(i), false);
+                hidden = Outline.hidden(blocks());
+            }
+        }
+        for (int i = 0; i < views.size(); i++) views.get(i).setHidden(hidden[i]);
+        outlineListener.run();
+    }
+
+    /** v を隠している畳んだ行をすべて開く。 */
+    private void reveal(BlockView v) {
+        int idx = views.indexOf(v);
+        if (idx < 0) return;
+        List<Integer> hiders = Outline.hiders(blocks(), idx);
+        if (hiders.isEmpty()) return;
+        for (int i : hiders) setCollapsed(views.get(i), false);
+        refreshLayout();
+    }
+
+    /** idx の行を b に変えたら、畳んだ節に入って隠れるか。 */
+    private boolean wouldBeHidden(int idx, Block b) {
+        var after = new ArrayList<>(blocks());
+        after.set(idx, b);
+        return !Outline.hiders(after, idx).isEmpty();
+    }
+
+    private void setCollapsed(BlockView v, boolean collapsed) {
+        v.setBlock(v.block().withCollapsed(collapsed));
+        s.saver().changed(v.block());
+    }
+
+    /** idx の行を動かすときに一緒に動く行の数。畳んでいれば隠れた行も含む。 */
+    private int groupSize(int idx) {
+        return views.get(idx).block().collapsed() ? Outline.end(blocks(), idx) - idx : 1;
+    }
+
+    private int visibleBefore(int idx) {
+        for (int i = idx - 1; i >= 0; i--) {
+            if (!views.get(i).hidden()) return i;
+        }
+        return -1;
+    }
+
+    private int visibleAfter(int idx) {
+        for (int i = idx + 1; i < views.size(); i++) {
+            if (!views.get(i).hidden()) return i;
+        }
+        return -1;
+    }
+
     private List<Block> blocks() {
         return views.stream().map(BlockView::block).toList();
     }
 
     private void focusNear(int idx, boolean atEnd) {
         if (views.isEmpty()) return;
-        BlockView v = views.get(Math.clamp(idx, 0, views.size() - 1));
+        int i = Math.clamp(idx, 0, views.size() - 1);
+        if (views.get(i).hidden()) i = visibleBefore(i);
+        BlockView v = views.get(Math.max(i, 0));
         if (atEnd) v.focusEnd();
         else v.focusAt(0);
     }
 
-    private void clickBelowLastBlock() {
+    void clickBelowLastBlock() {
         if (page == null || views.isEmpty()) return;
-        BlockView last = views.getLast();
-        if (last.block().type() == BlockType.PARAGRAPH && last.text().isEmpty()) {
+        BlockView last = views.get(Math.max(visibleBefore(views.size()), 0));
+        if (last.block().type() == BlockType.PARAGRAPH && last.text().isEmpty() && !last.block().collapsed()) {
             last.focusAt(0);
-        } else {
-            insertBlock(views.size(), Block.empty(page.id(), BlockType.PARAGRAPH, 0)).focusAt(0);
+            return;
         }
+        // 畳んだ見出しが最後の節なら、段落はその節に入って開いてしまう。Enter と同じく同じ段の見出しにする
+        Block lb = last.block();
+        BlockType type = lb.collapsed() && Outline.level(lb.type()) > 0 && lb.indent() == 0
+            ? lb.type() : BlockType.PARAGRAPH;
+        insertBlock(views.size(), Block.empty(page.id(), type, 0)).focusAt(0);
     }
 
     private void ensureVisible(Node node) {
@@ -566,6 +753,19 @@ final class PageEditor extends VBox implements BlockView.Host {
         else if (b.getMaxY() > top + viewport) y = b.getMaxY() - viewport + 24;
         else return;
         scrollPane.setVvalue(Math.clamp(y / (contentHeight - viewport), 0, 1));
+    }
+
+    /** node が画面の上の方に来るように送る。開いたばかりの行も測れるよう、先に配置を済ませる。 */
+    private void scrollToTop(Node node) {
+        if (scrollPane == null || scrollPane.getContent() == null) return;
+        scrollPane.applyCss();
+        scrollPane.layout();
+        Node content = scrollPane.getContent();
+        Bounds b = content.sceneToLocal(node.localToScene(node.getBoundsInLocal()));
+        double contentHeight = content.getBoundsInLocal().getHeight();
+        double viewport = scrollPane.getViewportBounds().getHeight();
+        if (contentHeight <= viewport) return;
+        scrollPane.setVvalue(Math.clamp((b.getMinY() - 24) / (contentHeight - viewport), 0, 1));
     }
 
     void saveTitle() {

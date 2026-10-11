@@ -47,12 +47,15 @@ final class BlockView extends HBox {
         void focused(BlockView v);
         void openLink(String url);
         void dragStarted(BlockView v, MouseEvent e);
+        void toggleFold(BlockView v);
     }
 
     private final Host host;
     private final StyleClassedTextArea area = new StyleClassedTextArea();
     private final Label handle = new Label("⋮⋮");
     private final Region indentSpacer = new Region();
+    private final StackPane fold = new StackPane();
+    private final Region foldArrow = new Region();
     private final StackPane gutter = new StackPane();
     private final Label bullet = new Label();
     private final CheckBox check = new CheckBox();
@@ -62,6 +65,8 @@ final class BlockView extends HBox {
     private Block block;
     private boolean loading;
     private boolean composing;
+    private boolean foldable;
+    private boolean hidden;
 
     BlockView(Block block, Host host) {
         this.block = block;
@@ -71,6 +76,16 @@ final class BlockView extends HBox {
 
         handle.getStyleClass().add("block-handle");
         handle.setOnDragDetected(e -> host.dragStarted(this, e));
+
+        // ▸▾ の枠は、畳めない行でも幅を取って本文の位置をそろえる
+        // 文字の ▸ は字体によって点になるので、図形で描く。向きは CSS で変える
+        fold.getStyleClass().add("block-fold");
+        foldArrow.getStyleClass().add("block-fold-arrow");
+        fold.getChildren().add(foldArrow);
+        fold.setOnMouseClicked(e -> {
+            host.toggleFold(this);
+            e.consume();
+        });
 
         gutter.getStyleClass().add("block-gutter");
         bullet.getStyleClass().add("block-bullet");
@@ -95,7 +110,7 @@ final class BlockView extends HBox {
         HBox.setHgrow(content, Priority.ALWAYS);
         content.setMaxWidth(Double.MAX_VALUE);
 
-        getChildren().addAll(handle, indentSpacer, gutter, content);
+        getChildren().addAll(handle, indentSpacer, fold, gutter, content);
 
         area.multiRichChanges().subscribe(changes -> {
             if (!loading) onEdited();
@@ -162,6 +177,27 @@ final class BlockView extends HBox {
 
     void setListNumber(int n) {
         if (block.type() == BlockType.NUMBERED) bullet.setText(n + ".");
+    }
+
+    /** 子の行があって畳めるか。PageEditor が並び全体から決める。 */
+    void setFoldable(boolean f) {
+        foldable = f;
+        pseudoUpdate();
+    }
+
+    boolean foldable() {
+        return foldable;
+    }
+
+    /** 畳んだ行の範囲に入っていれば隠す。 */
+    void setHidden(boolean h) {
+        hidden = h;
+        setVisible(!h);
+        setManaged(!h);
+    }
+
+    boolean hidden() {
+        return hidden;
     }
 
     void focusAt(int position) {
@@ -236,8 +272,10 @@ final class BlockView extends HBox {
     }
 
     private void pseudoUpdate() {
-        getStyleClass().remove("checked");
+        getStyleClass().removeAll("checked", "foldable", "collapsed");
         if (block.type() == BlockType.TODO && block.checked()) getStyleClass().add("checked");
+        if (foldable) getStyleClass().add("foldable");
+        if (foldable && block.collapsed()) getStyleClass().add("collapsed");
     }
 
     private void updatePlaceholder() {
@@ -287,6 +325,11 @@ final class BlockView extends HBox {
             };
             if (style != null && block.type() != BlockType.CODE) {
                 StyledText.toggle(area, style);
+                e.consume();
+                return;
+            }
+            if (e.getCode() == KeyCode.ENTER && !e.isShiftDown()) {
+                host.toggleFold(this);
                 e.consume();
                 return;
             }
