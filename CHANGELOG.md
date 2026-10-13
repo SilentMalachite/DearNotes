@@ -4,6 +4,12 @@
 
 ## [Unreleased]
 
+## [1.3.2] - 2026-10-13
+
+### 修正
+
+- 日本語を入れ始めるときや改行のときに表示が崩れ、先頭の文字が欠けることがあるのを直した。変換を確定する Enter では新しい行を作らず、候補は入力している行のそばに出る。変換中の文字には下線が付く
+
 ## [1.3.1] - 2026-10-11
 
 ### 変更
@@ -67,7 +73,8 @@
 - 入力が 500ms 止まったら1本の書き込みスレッドで保存する自動保存と、終了時の書き出し
 - jlink と jpackage による macOS（.dmg）と Windows（.msi）のインストーラー
 
-[Unreleased]: https://github.com/SilentMalachite/DearNotes/compare/v1.3.1...HEAD
+[Unreleased]: https://github.com/SilentMalachite/DearNotes/compare/v1.3.2...HEAD
+[1.3.2]: https://github.com/SilentMalachite/DearNotes/compare/v1.3.1...v1.3.2
 [1.3.1]: https://github.com/SilentMalachite/DearNotes/compare/v1.3.0...v1.3.1
 [1.3.0]: https://github.com/SilentMalachite/DearNotes/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/SilentMalachite/DearNotes/compare/v1.1.0...v1.2.0
