@@ -83,6 +83,8 @@ final class PageEditor extends VBox implements BlockView.Host {
             if (!loadingTitle) renameLater.playFromStart();
         });
         renameLater.setOnFinished(e -> saveTitle());
+        // 変換の確定に使った Enter では、本文へ移さない
+        new ImeGuard().install(title);
         title.setOnKeyPressed(e -> {
             if (e.getCode() == KeyCode.ENTER || e.getCode() == KeyCode.DOWN) {
                 saveTitle();

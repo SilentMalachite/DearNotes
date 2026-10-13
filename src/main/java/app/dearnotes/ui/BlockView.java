@@ -24,6 +24,7 @@ import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.StackPane;
+import javafx.scene.input.InputMethodEvent;
 import org.fxmisc.richtext.StyleClassedTextArea;
 import org.fxmisc.richtext.model.ReadOnlyStyledDocument;
 
@@ -59,7 +60,7 @@ final class BlockView extends HBox {
     }
 
     private final Host host;
-    private final StyleClassedTextArea area = new StyleClassedTextArea();
+    private final ImeArea area = new ImeArea();
     private final Label handle = new Label("⋮⋮");
     private final Region indentSpacer = new Region();
     private final StackPane fold = new StackPane();
@@ -74,7 +75,6 @@ final class BlockView extends HBox {
     private boolean loading;
     /** insertPageLink や装飾ごとの貼り付けの最中。入れたリンクを unlink で外さないため。 */
     private boolean linking;
-    private boolean composing;
     private boolean foldable;
     private boolean hidden;
 
@@ -126,14 +126,16 @@ final class BlockView extends HBox {
             if (!loading) onEdited();
         });
         area.plainTextChanges().subscribe(ch -> {
+            // 変換中の置き換えでは調べない。確定した文字は finishImeCommit で調べる。
             // 日本語入力では「＃　」がまとめて確定されることもあるので、短い入力なら調べる
+            if (loading || area.isApplyingIme()) return;
             int n = ch.getInserted().length();
             // 元に戻すときは、消す前の装飾ごと戻すので触らない。
             // 記号の変換は行頭を消して位置がずれるので、リンクの印を外してから調べる
-            if (!loading && !linking && n >= 1 && !area.getUndoManager().isPerformingAction()) {
+            if (!linking && n >= 1 && !area.getUndoManager().isPerformingAction()) {
                 Platform.runLater(() -> unlink(ch.getPosition(), n));
             }
-            if (!loading && n >= 1 && n <= 4) Platform.runLater(this::detectShortcut);
+            if (n >= 1 && n <= 4) Platform.runLater(this::detectShortcut);
         });
         // ←→ やクリックでカーソルが「[[」から離れたら、ページの候補を閉じる
         area.caretPositionProperty().addListener((obs, old, now) -> {
@@ -144,9 +146,11 @@ final class BlockView extends HBox {
             if (now) host.focused(this);
             else host.blurred(this);
         });
-        // 日本語入力で変換中の文字があるあいだは、ショートカットも Enter も IME に任せる
-        area.addEventFilter(javafx.scene.input.InputMethodEvent.INPUT_METHOD_TEXT_CHANGED,
-            e -> composing = !e.getComposed().isEmpty());
+        // 確定のあと、変換中に触れなかったリンクの印と行頭の記号を調べる
+        area.addEventFilter(InputMethodEvent.INPUT_METHOD_TEXT_CHANGED, e -> {
+            if (e.getComposed() != null && !e.getComposed().isEmpty()) return;
+            Platform.runLater(this::finishImeCommit);
+        });
         area.addEventFilter(KeyEvent.KEY_PRESSED, this::onKeyPressed);
         area.addEventFilter(ScrollEvent.SCROLL, e -> {
             e.consume();
@@ -262,6 +266,7 @@ final class BlockView extends HBox {
         try {
             StyledText.load(area, block.text(), block.type() == BlockType.CODE ? List.of() : block.marks());
             area.getUndoManager().forgetHistory();
+            area.noteDocumentReplaced();
         } finally {
             loading = false;
         }
@@ -352,9 +357,17 @@ final class BlockView extends HBox {
         area.setStyleSpans(at, area.getStyleSpans(at, end).mapStyles(StyledText::withoutPage));
     }
 
+    /** 変換が終わった文字について、リンクの印と行頭の記号を調べる。 */
+    private void finishImeCommit() {
+        if (area.isComposing()) return;
+        int n = area.commitLength();
+        if (n > 0) unlink(area.commitStart(), n);
+        detectShortcut();
+    }
+
     /** 行頭に「# 」などを打ったら、その種類に変える。 */
     private void detectShortcut() {
-        if (block.type() != BlockType.PARAGRAPH || composing) return;
+        if (block.type() != BlockType.PARAGRAPH || area.isComposing()) return;
         MarkdownShortcuts.detect(area.getText(), area.getCaretPosition())
             // 「---」「#」などの名前のページへのリンクは記号ではない。変えるとリンクが消える
             .filter(hit -> StyledText.read(area).stream()
@@ -363,7 +376,11 @@ final class BlockView extends HBox {
     }
 
     private void onKeyPressed(KeyEvent e) {
-        if (composing) return;
+        // 変換中と、確定に使った Enter は行の分割に使わない。消費しないと改行が入る
+        if (area.claimsKey(e)) {
+            e.consume();
+            return;
+        }
         if (host.slashKey(this, e)) {
             e.consume();
             return;

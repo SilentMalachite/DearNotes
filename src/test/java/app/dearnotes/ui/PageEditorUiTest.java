@@ -16,7 +16,13 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Callable;
 import java.util.concurrent.TimeUnit;
 import javafx.application.Platform;
+import javafx.geometry.Bounds;
+import javafx.geometry.Point2D;
 import javafx.scene.Node;
+import javafx.scene.control.TextField;
+import javafx.scene.input.InputMethodEvent;
+import javafx.scene.input.InputMethodHighlight;
+import javafx.scene.input.InputMethodTextRun;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
 import javafx.stage.Stage;
@@ -911,9 +917,129 @@ class PageEditorUiTest {
             fx(() -> window.outline().items().stream().map(javafx.scene.control.Label::getText).toList()));
     }
 
+    @Test
+    void imeCompositionKeepsTheFirstCharacterAndUnderlinesIt() throws Exception {
+        focusFirstBlock();
+        fx(() -> {
+            var area = current().area();
+            fireIme(area, "あ", "");
+            assertEquals("あ", area.getText());
+            assertTrue(area.getStyleOfChar(0).contains(ImeArea.COMPOSED));
+            fireIme(area, "あい", "");
+            assertEquals("あい", area.getText());
+            fireIme(area, "", "愛");
+            assertEquals("愛", area.getText());
+            assertFalse(area.getStyleOfChar(0).contains(ImeArea.COMPOSED));
+            return null;
+        });
+    }
+
+    @Test
+    void imeEnterDoesNotSplitOrInsertANewline() throws Exception {
+        focusFirstBlock();
+        fx(() -> {
+            var area = current().area();
+            fireIme(area, "かんじ", "");
+            fireEnter(area);
+            assertEquals("かんじ", area.getText());
+            assertEquals(1, window.editor().views().size());
+            return null;
+        });
+        // 確定に使った Enter も、その場では行を分けない
+        fx(() -> {
+            var area = current().area();
+            fireIme(area, "", "漢字");
+            fireEnter(area);
+            assertEquals("漢字", area.getText());
+            assertEquals(1, window.editor().views().size());
+            return null;
+        });
+        settle();
+        press(KeyCode.ENTER);
+        assertEquals(List.of("paragraph:0:漢字", "paragraph:0:"), summary());
+    }
+
+    @Test
+    void imeCandidateStaysByTheLineAfterEnterAndABreak() throws Exception {
+        focusFirstBlock();
+        assertNearLine(fx(() -> current().area()));
+        type("ab");
+        press(KeyCode.ENTER, KeyMod.SHIFT);
+        fx(() -> {
+            var area = current().area();
+            assertEquals("ab\n", area.getText());
+            area.moveTo(2); // 改行の位置
+            assertNearLine(area);
+            return null;
+        });
+        press(KeyCode.ENTER);
+        assertNearLine(fx(() -> current().area()));
+    }
+
+    @Test
+    void imeCommitStillDetectsAFullwidthHeadingMark() throws Exception {
+        focusFirstBlock();
+        fx(() -> {
+            fireIme(current().area(), "＃　", "");
+            assertEquals(BlockType.PARAGRAPH, current().block().type());
+            fireIme(current().area(), "", "＃　");
+            return null;
+        });
+        settle();
+        assertEquals(BlockType.H1, fx(() -> current().block().type()));
+        assertEquals("", fx(() -> current().block().text()));
+    }
+
+    @Test
+    void titleConfirmEnterStaysInTheTitle() throws Exception {
+        TextField title = fx(() -> {
+            var field = (TextField) stage.getScene().lookup(".page-title");
+            field.requestFocus();
+            fireIme(field, "あい", "");
+            fireEnter(field);
+            assertSame(field, stage.getScene().getFocusOwner());
+            fireIme(field, "", "愛");
+            fireEnter(field);
+            assertSame(field, stage.getScene().getFocusOwner());
+            assertEquals("愛", field.getText());
+            return field;
+        });
+        settle();
+        press(KeyCode.ENTER);
+        assertEquals("愛", fx(title::getText));
+        fx(() -> {
+            current();
+            return null;
+        });
+    }
+
     // ---- helpers ----
 
     enum KeyMod { SHIFT, SHORTCUT }
+
+    private static void fireIme(Node target, String composed, String committed) {
+        var runs = composed.isEmpty()
+            ? List.<InputMethodTextRun>of()
+            : List.of(new InputMethodTextRun(composed, InputMethodHighlight.UNSELECTED_RAW));
+        target.fireEvent(new InputMethodEvent(
+            InputMethodEvent.INPUT_METHOD_TEXT_CHANGED, runs, committed, composed.length()));
+    }
+
+    private static void fireEnter(Node target) {
+        target.fireEvent(new KeyEvent(KeyEvent.KEY_PRESSED, "", "", KeyCode.ENTER,
+            false, false, false, false));
+    }
+
+    /** 候補窓の位置が、行の画面上の範囲から離れていない。 */
+    private static void assertNearLine(org.fxmisc.richtext.StyleClassedTextArea area) {
+        Point2D p = area.getInputMethodRequests().getTextLocation(0);
+        Bounds b = area.localToScreen(area.getBoundsInLocal());
+        assertNotNull(b, "行が画面にない");
+        assertTrue(p.getX() >= b.getMinX() - 20 && p.getX() <= b.getMaxX() + 20,
+            () -> "x " + p + " vs " + b);
+        assertTrue(p.getY() >= b.getMinY() - 20 && p.getY() <= b.getMaxY() + 30,
+            () -> "y " + p + " vs " + b);
+    }
 
     private void focusFirstBlock() throws Exception {
         fx(() -> {
