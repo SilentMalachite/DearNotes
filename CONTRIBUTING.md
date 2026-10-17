@@ -44,7 +44,7 @@ CI（GitHub Actions）で同じテストが動きます。通らない Pull Requ
 
 ### テスト
 
-- 画面の動きは `src/test/java/app/dearnotes/ui/PageEditorUiTest.java` のように、本物の画面にキーイベントを送って確かめる。画面のない環境では UI テストは飛ぶ
+- 画面の動きは `src/test/kotlin/app/dearnotes/ui/PageEditorUiTest.kt` のように、本物の画面にキーイベントを送って確かめる。画面のない環境では UI テストは飛ぶ
 - データベースのテストは `DbTestBase` を継いで、一時フォルダの SQLite で動かす
 
 ### コードの書き方
