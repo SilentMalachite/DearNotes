@@ -1,7 +1,7 @@
 package app.dearnotes.db
 
+import app.dearnotes.isJavaBlank
 import app.dearnotes.strip
-import app.dearnotes.stripLeading
 
 import app.dearnotes.model.Ids
 import app.dearnotes.model.Page
@@ -129,7 +129,7 @@ class PageRepo(private val db: Database) {
     fun setIcon(id: String, icon: String?) {
         update(
             "UPDATE pages SET icon = ?, updated_at = ? WHERE id = ?",
-            if (icon == null || icon.isBlank()) null else icon,
+            if (icon == null || icon.isJavaBlank()) null else icon,
             id,
         )
     }

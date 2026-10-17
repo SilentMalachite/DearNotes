@@ -1,5 +1,7 @@
 package app.dearnotes.ui
 
+import app.dearnotes.isJavaBlank
+
 import app.dearnotes.db.SearchRepo.Hit
 import java.util.concurrent.TimeUnit
 import javafx.animation.PauseTransition
@@ -54,7 +56,7 @@ internal class SearchDialog(
                     }
                     val icon = h.pageIcon ?: if (h.daily) "📅" else "📝"
                     val pageTitle = h.pageTitle
-                    val title = if (pageTitle.isNullOrBlank()) "無題" else pageTitle
+                    val title = if (pageTitle.isJavaBlank()) "無題" else pageTitle
                     val t = Label(icon + "  " + title)
                     t.styleClass.add("hit-title")
                     val snip = Label(h.snippet)
@@ -134,7 +136,7 @@ internal class SearchDialog(
     private fun runSearch() {
         val q = field.text
         searchedQuery = q
-        if (q.isNullOrBlank()) {
+        if (q == null || q.isJavaBlank()) {
             results.items.clear()
             empty.text = "語句を入れると、すべてのページから探します"
             return

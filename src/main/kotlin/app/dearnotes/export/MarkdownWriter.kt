@@ -1,7 +1,7 @@
 package app.dearnotes.export
 
+import app.dearnotes.isJavaBlank
 import app.dearnotes.strip
-import app.dearnotes.stripLeading
 import app.dearnotes.stripTrailing
 
 import app.dearnotes.editor.BlockOps
@@ -32,7 +32,7 @@ object MarkdownWriter {
         var prev: Block? = null
         for (i in blocks.indices) {
             val b = blocks[i]
-            if (b.type == BlockType.PARAGRAPH && b.text.isBlank()) {
+            if (b.type == BlockType.PARAGRAPH && b.text.isJavaBlank()) {
                 prev = b
                 continue
             }
@@ -115,7 +115,7 @@ object MarkdownWriter {
         val depth = blocks[i].indent
         for (j in i - 1 downTo 0) {
             val b = blocks[j]
-            if (b.type == BlockType.PARAGRAPH && b.text.isBlank()) continue
+            if (b.type == BlockType.PARAGRAPH && b.text.isJavaBlank()) continue
             if (b.indent > depth) continue // 前の項目の子の行
             return b.indent == depth && b.type == BlockType.NUMBERED
         }

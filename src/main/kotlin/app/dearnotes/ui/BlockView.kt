@@ -1,7 +1,6 @@
 package app.dearnotes.ui
 
 import app.dearnotes.strip
-import app.dearnotes.stripLeading
 
 import app.dearnotes.editor.MarkdownShortcuts
 import app.dearnotes.editor.Marks

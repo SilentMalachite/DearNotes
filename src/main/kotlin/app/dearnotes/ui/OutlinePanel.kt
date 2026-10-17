@@ -1,5 +1,7 @@
 package app.dearnotes.ui
 
+import app.dearnotes.isJavaBlank
+
 import app.dearnotes.editor.Outline
 import javafx.scene.control.Label
 import javafx.scene.control.OverrunStyle
@@ -39,7 +41,7 @@ internal class OutlinePanel(
             return
         }
         for (h in headings) {
-            val blank = h.text.isBlank()
+            val blank = h.text.isJavaBlank()
             val item = Label(if (blank) "無題の見出し" else h.text.replace('\n', ' '))
             item.styleClass.addAll("outline-item", "outline-h" + h.level)
             if (blank) item.styleClass.add("blank")

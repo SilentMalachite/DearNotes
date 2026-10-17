@@ -1,7 +1,7 @@
 package app.dearnotes.editor
 
+import app.dearnotes.isJavaBlank
 import app.dearnotes.strip
-import app.dearnotes.stripLeading
 
 import app.dearnotes.model.Mark
 
@@ -25,7 +25,7 @@ object MarksCodec {
     }
 
     fun decode(json: String?): List<Mark> {
-        if (json.isNullOrBlank()) return emptyList()
+        if (json == null || json.isJavaBlank()) return emptyList()
         val out = ArrayList<Mark>()
         val s = json.strip()
         var i = s.indexOf('[') + 1
@@ -34,7 +34,8 @@ object MarksCodec {
             if (open < 0) break
             val close = s.indexOf(']', open)
             if (close < 0) break
-            val parts = s.substring(open + 1, close).split(",")
+            // Java の split と同じく、末尾の空の要素は捨てる
+            val parts = s.substring(open + 1, close).split(",").dropLastWhile { it.isEmpty() }
             i = close + 1
             if (parts.size != 3 && parts.size != 4) continue
             try {

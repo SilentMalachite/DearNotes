@@ -1,7 +1,7 @@
 package app.dearnotes.ui
 
+import app.dearnotes.isJavaBlank
 import app.dearnotes.strip
-import app.dearnotes.stripLeading
 
 import app.dearnotes.db.BlockRepo.Backlink
 import javafx.scene.control.Label
@@ -33,7 +33,7 @@ internal class Backlinks(
         for (i in links.indices) {
             val b = links[i]
             val pageTitle = b.pageTitle
-            val shownTitle = if (pageTitle.isNullOrBlank()) "無題" else pageTitle
+            val shownTitle = if (pageTitle.isJavaBlank()) "無題" else pageTitle
             val title = icon(b) + " " + shownTitle
             titles.add(title)
             val name = Label(title)
@@ -58,7 +58,7 @@ internal class Backlinks(
 
     private fun icon(b: Backlink): String {
         val pageIcon = b.pageIcon
-        if (!pageIcon.isNullOrBlank()) return pageIcon
+        if (pageIcon != null && !pageIcon.isJavaBlank()) return pageIcon
         return if (b.daily) "📅" else "📝"
     }
 

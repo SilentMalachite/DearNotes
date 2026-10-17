@@ -1,7 +1,6 @@
 package app.dearnotes.save
 
 import app.dearnotes.model.Block
-import java.sql.SQLException
 import java.util.LinkedHashMap
 import java.util.LinkedHashSet
 import java.util.function.Consumer
@@ -129,9 +128,8 @@ class AutoSaver(
                     if (pending.isEmpty() && pendingDeletes.isEmpty()) SaveStatus.SAVED else SaveStatus.DIRTY,
                 )
             }
-        } catch (e: SQLException) {
-            keepAndRetry(batch, deletes, e)
-        } catch (e: RuntimeException) {
+        } catch (e: Exception) {
+            // Kotlin には検査例外がないので、SQLException 以外の検査例外も来る
             keepAndRetry(batch, deletes, e)
         }
     }

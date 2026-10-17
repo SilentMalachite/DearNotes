@@ -1,5 +1,7 @@
 package app.dearnotes.model
 
+import app.dearnotes.isJavaBlank
+
 import java.time.LocalDate
 
 /** サイドバーに出るページ。dailyDate があれば日記。 */
@@ -18,10 +20,10 @@ data class Page(
 
     fun isTrashed() = deletedAt != null
 
-    fun displayTitle() = if (title.isNullOrBlank()) "無題" else title
+    fun displayTitle() = if (title == null || title.isJavaBlank()) "無題" else title
 
     fun displayIcon(): String {
-        if (!icon.isNullOrBlank()) return icon
+        if (icon != null && !icon.isJavaBlank()) return icon
         return if (isDaily()) "📅" else "📝"
     }
 }

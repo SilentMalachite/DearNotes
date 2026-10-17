@@ -31,4 +31,10 @@ class SlashCommandsTest {
         assertNull(SlashCommands.queryOf("/見 出し"))
         assertNull(SlashCommands.queryOf("見出し"))
     }
+
+    @Test
+    fun nbspDoesNotEndTheQuery() {
+        assertEquals("見\u00A0出し", SlashCommands.queryOf("/見\u00A0出し"))
+        assertNull(SlashCommands.queryOf("/見\u3000出し"))
+    }
 }

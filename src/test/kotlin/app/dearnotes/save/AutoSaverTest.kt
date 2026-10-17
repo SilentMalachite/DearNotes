@@ -2,6 +2,7 @@ package app.dearnotes.save
 
 import app.dearnotes.model.Block
 import app.dearnotes.model.BlockType
+import java.io.IOException
 import java.sql.SQLException
 import java.util.ArrayList
 import java.util.concurrent.CopyOnWriteArrayList
@@ -22,8 +23,11 @@ internal class AutoSaverTest {
         val deletes = CopyOnWriteArrayList<List<String>>()
         val failuresLeft = AtomicInteger()
 
+        @Volatile
+        var failure: () -> Exception = { SQLException("disk full") }
+
         override fun save(upserts: Collection<Block>, deletes: Collection<String>) {
-            if (failuresLeft.getAndDecrement() > 0) throw SQLException("disk full")
+            if (failuresLeft.getAndDecrement() > 0) throw failure()
             saves.add(upserts.toList())
             this.deletes.add(deletes.toList())
         }
@@ -78,6 +82,17 @@ internal class AutoSaverTest {
         val saver = newSaver(10L, 50L)
         val b = block("消えない")
         saver.changed(b)
+        waitUntil { statuses.contains(SaveStatus.FAILED) }
+        waitUntil { saver.status() == SaveStatus.SAVED }
+        assertEquals("消えない", store.saves.first().first().text)
+    }
+
+    @Test
+    fun checkedFailureOtherThanSqlAlsoRetries() {
+        store.failuresLeft.set(1)
+        store.failure = { IOException("ディスクが外れた") }
+        val saver = newSaver(10L, 50L)
+        saver.changed(block("消えない"))
         waitUntil { statuses.contains(SaveStatus.FAILED) }
         waitUntil { saver.status() == SaveStatus.SAVED }
         assertEquals("消えない", store.saves.first().first().text)

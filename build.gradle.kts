@@ -28,7 +28,8 @@ java {
 kotlin {
     jvmToolchain(25)
     compilerOptions {
-        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_25)
+        // 既定の警告に加えて、使っていない変数や不要な null 判定なども知らせる
+        extraWarnings.set(true)
     }
 }
 
@@ -51,11 +52,6 @@ dependencies {
 application {
     mainClass = "app.dearnotes.Launcher"
     applicationDefaultJvmArgs = listOf("--enable-native-access=ALL-UNNAMED")
-}
-
-tasks.withType<JavaCompile>().configureEach {
-    options.encoding = "UTF-8"
-    options.compilerArgs.addAll(listOf("-Xlint:all", "-Xlint:-serial"))
 }
 
 // ./gradlew run -Pdearnotes.dataDir=/tmp/x で、別のデータフォルダを使って試せる

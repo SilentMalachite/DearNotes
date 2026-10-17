@@ -1,7 +1,7 @@
 package app.dearnotes.ui
 
+import app.dearnotes.isJavaBlank
 import app.dearnotes.strip
-import app.dearnotes.stripLeading
 
 import app.dearnotes.editor.BlockOps
 import app.dearnotes.editor.Marks
@@ -192,7 +192,7 @@ internal class PageEditor(
                     target.focusEnd()
                     Platform.runLater { ensureVisible(target) }
                 }
-            } else if (opened.title.isNullOrBlank() && !opened.isDaily()) {
+            } else if ((opened.title == null || opened.title.isJavaBlank()) && !opened.isDaily()) {
                 title.requestFocus()
             } else {
                 views.first().focusEnd()
@@ -839,7 +839,7 @@ internal class PageEditor(
         dialog.headerText = "絵文字を1つ入れてください（空にすると元に戻ります）"
         dialog.initOwner(scene.window)
         val icon = dialog.showAndWait().orElse(null) ?: return
-        val value = if (icon.isBlank()) {
+        val value = if (icon.isJavaBlank()) {
             null
         } else {
             val sb = StringBuilder()

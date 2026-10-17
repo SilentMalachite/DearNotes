@@ -6,6 +6,8 @@ DearNotes 本体は Apache License 2.0 です（[LICENSE](LICENSE)）。イン�
 |---|---|---|---|
 | OpenJDK ランタイム（jlink で作った JRE） | 25 | GPL v2 + Classpath Exception | https://adoptium.net/ |
 | OpenJFX（javafx-base, javafx-graphics, javafx-controls） | 25.0.4 | GPL v2 + Classpath Exception | https://openjfx.io/ |
+| Kotlin 標準ライブラリ（kotlin-stdlib） | 2.4.21 | Apache License 2.0 | https://github.com/JetBrains/kotlin |
+| JetBrains Java Annotations（kotlin-stdlib が使う） | 13.0 | Apache License 2.0 | https://github.com/JetBrains/java-annotations |
 | RichTextFX | 0.11.7 | BSD 2-Clause | https://github.com/FXMisc/RichTextFX |
 | Flowless | 0.7.4 | BSD 2-Clause | https://github.com/FXMisc/Flowless |
 | ReactFX | 2.0-M5 | BSD 2-Clause | https://github.com/TomasMikula/ReactFX |

@@ -41,6 +41,12 @@ internal class MarkdownWriterTest {
     private fun write(): String = MarkdownWriter.write(PAGE, blocks)
 
     @Test
+    fun nbspParagraphIsNotSkipped() {
+        add(PARAGRAPH, "\u00A0", 0)
+        assertEquals("# 京都\n\n\u00A0\n", write())
+    }
+
+    @Test
     fun emptyPageIsOnlyTheTitle() {
         assertEquals("# 京都\n", write())
     }

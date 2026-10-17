@@ -27,10 +27,9 @@ class Database private constructor(
                 val result = work(writer)
                 writer.commit()
                 return result
-            } catch (e: SQLException) {
-                writer.rollback()
-                throw e
-            } catch (e: RuntimeException) {
+            } catch (e: Throwable) {
+                // Kotlin には検査例外がないので、何が飛んできても巻き戻す。
+                // 巻き戻さないと、finally の autoCommit = true で途中までの書き込みが確定する。
                 writer.rollback()
                 throw e
             } finally {

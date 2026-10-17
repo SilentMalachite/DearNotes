@@ -1,6 +1,6 @@
 package app.dearnotes.editor
 
-import app.dearnotes.strip
+import app.dearnotes.isJavaBlank
 import app.dearnotes.stripLeading
 
 import app.dearnotes.model.Block
@@ -14,9 +14,8 @@ object PasteParser {
     private val numbered = Regex("^\\d+[.)] (.*)$")
 
     fun parse(text: String): List<Line> {
-        // Java の split("\n", -1) と同じく、末尾の空行も残す
-        val raw = java.util.regex.Pattern.compile("\n", java.util.regex.Pattern.LITERAL)
-            .split(text.replace("\r\n", "\n").replace('\r', '\n'), -1)
+        // Kotlin の split は末尾の空行も残す（Java の split("\n", -1) と同じ）
+        val raw = text.replace("\r\n", "\n").replace('\r', '\n').split("\n")
         val out = ArrayList<Line>()
         var i = 0
         while (i < raw.size) {
@@ -35,7 +34,7 @@ object PasteParser {
                 i++
                 continue
             }
-            if (body.isBlank()) {
+            if (body.isJavaBlank()) {
                 i++
                 continue
             }

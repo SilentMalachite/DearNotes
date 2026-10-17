@@ -1,7 +1,6 @@
 package app.dearnotes.export
 
 import app.dearnotes.strip
-import app.dearnotes.stripLeading
 
 import app.dearnotes.model.Block
 import app.dearnotes.model.Page

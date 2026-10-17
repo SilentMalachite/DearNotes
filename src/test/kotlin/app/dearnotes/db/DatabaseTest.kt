@@ -1,5 +1,6 @@
 package app.dearnotes.db
 
+import java.io.IOException
 import java.sql.Connection
 import java.sql.DriverManager
 import java.sql.SQLException
@@ -38,6 +39,19 @@ internal class DatabaseTest : DbTestBase() {
             }
         }
         assertTrue(pages.get("x") == null)
+    }
+
+    @Test
+    fun checkedExceptionAlsoRollsBack() {
+        assertThrows(IOException::class.java) {
+            db.write { c ->
+                c.createStatement().use { s ->
+                    s.executeUpdate("INSERT INTO pages (id, sort_key, created_at, updated_at) VALUES ('y', 1, 0, 0)")
+                }
+                throw IOException("途中で失敗")
+            }
+        }
+        assertTrue(pages.get("y") == null)
     }
 
     @Test

@@ -1,7 +1,7 @@
 package app.dearnotes.editor
 
+import app.dearnotes.isJavaWhitespace
 import app.dearnotes.strip
-import app.dearnotes.stripLeading
 
 import app.dearnotes.model.BlockType
 import java.util.Locale
@@ -43,8 +43,6 @@ object SlashCommands {
     fun queryOf(text: String): String? {
         if (!text.startsWith("/") || text.contains("\n")) return null
         val q = text.substring(1)
-        val pieces = java.util.regex.Pattern.compile("").split(q, 0)
-        val blank = pieces.any { it.isBlank() }
-        return if (blank && q.isNotEmpty()) null else q
+        return if (q.any { it.isJavaWhitespace() }) null else q
     }
 }

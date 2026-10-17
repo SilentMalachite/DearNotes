@@ -1,5 +1,7 @@
 package app.dearnotes.export
 
+import app.dearnotes.isJavaWhitespace
+
 import app.dearnotes.model.Mark
 import app.dearnotes.model.Mark.Style
 import java.util.Comparator
@@ -207,8 +209,8 @@ internal object Inline {
             var start = minOf(m.start, text.length)
             var end = minOf(m.end, text.length)
             if (m.style != Style.CODE) {
-                while (start < end && Character.isWhitespace(text[start])) start++
-                while (end > start && Character.isWhitespace(text[end - 1])) end--
+                while (start < end && text[start].isJavaWhitespace()) start++
+                while (end > start && text[end - 1].isJavaWhitespace()) end--
             }
             if (start < end) out.add(m.withRange(start, end))
         }

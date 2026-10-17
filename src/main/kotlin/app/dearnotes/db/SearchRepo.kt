@@ -1,7 +1,6 @@
 package app.dearnotes.db
 
 import app.dearnotes.strip
-import app.dearnotes.stripLeading
 
 import java.sql.Connection
 import java.util.ArrayList

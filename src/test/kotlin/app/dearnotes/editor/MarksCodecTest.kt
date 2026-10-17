@@ -51,4 +51,10 @@ class MarksCodecTest {
         assertEquals(listOf(Mark(0, 1, Style.BOLD)), MarksCodec.decode("[[0,1,\"bold\"],[2,4,\"page\"]]"))
         assertEquals(emptyList<Mark>(), MarksCodec.decode("[[0,1,\"bold\",\"x\"]]"))
     }
+
+    @Test
+    fun trailingCommaIsIgnored() {
+        assertEquals(listOf(Mark(0, 3, Style.BOLD)), MarksCodec.decode("[[0,3,\"bold\",]]"))
+        assertEquals(listOf(Mark(0, 3, Style.PAGE, "id")), MarksCodec.decode("[[0,3,\"page\",\"id\",]]"))
+    }
 }
