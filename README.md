@@ -4,10 +4,10 @@
 [![Release](https://img.shields.io/github/v/release/SilentMalachite/DearNotes)](https://github.com/SilentMalachite/DearNotes/releases/latest)
 [![Downloads](https://img.shields.io/github/downloads/SilentMalachite/DearNotes/total)](https://github.com/SilentMalachite/DearNotes/releases)
 [![License](https://img.shields.io/github/license/SilentMalachite/DearNotes)](LICENSE)
-[![Java](https://img.shields.io/badge/Java-25-orange?logo=openjdk)](https://adoptium.net/)
+[![Kotlin](https://img.shields.io/badge/Kotlin-2.4-7F52FF?logo=kotlin)](https://kotlinlang.org/)
 [![Platform](https://img.shields.io/badge/platform-macOS%20%28Apple%20Silicon%29%20%7C%20Windows-lightgrey)](#ダウンロード)
 
-Notion のように1行ずつブロックで書く、手元で動くメモアプリです。Java 25、JavaFX、RichTextFX、SQLite で作っています。macOS と Windows 向けに jpackage でインストーラーを作れます。
+Notion のように1行ずつブロックで書く、手元で動くメモアプリです。Kotlin（JVM 25）、JavaFX、RichTextFX、SQLite で作っています。macOS と Windows 向けに jpackage でインストーラーを作れます。
 
 ## ダウンロード
 
@@ -34,7 +34,7 @@ Notion のように1行ずつブロックで書く、手元で動くメモアプ
 
 ## 動かす
 
-JDK 25 が要ります。JavaFX は Gradle が取ってくるので、JavaFX 入りの JDK でなくても構いません。
+JDK 25 が要ります。ソースは Kotlin です。JavaFX は Gradle が取ってくるので、JavaFX 入りの JDK でなくても構いません。
 
 ```sh
 ./gradlew run                                   # 起動
@@ -98,13 +98,13 @@ macOS 15 からは、Finder で右クリックして「開く」を選ぶ方法�
 ## 構成
 
 ```
-src/main/java/app/dearnotes
+src/main/kotlin/app/dearnotes
 ├── Launcher, App   起動と終了（終了時に未保存の変更を書いてから DB を閉じる）
 ├── model           Block, Page, BlockType, Mark, Ids (UUID v7), SortKeys
 ├── editor          Markdown ショートカット、「/」コマンド、貼り付けの解析、装飾の付け替え
 ├── db              Database, Migrations, PageRepo, BlockRepo, SearchRepo
 ├── save            AutoSaver（書き込みスレッド）
-└── ui              MainWindow, Sidebar, PageEditor, BlockView, SlashMenu, SearchDialog, TrashDialog
+└── ui              MainWindow, Sidebar, PageEditor, BlockView, ImeArea, SlashMenu, SearchDialog, TrashDialog
 ```
 
 設計は `docs/plan/plan.html`、実装計画は `docs/plan/implementation.md` にあります。

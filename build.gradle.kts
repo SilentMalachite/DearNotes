@@ -2,6 +2,7 @@ import org.gradle.internal.os.OperatingSystem
 
 plugins {
     application
+    kotlin("jvm") version "2.4.21"
 }
 
 group = "app.dearnotes"
@@ -22,6 +23,13 @@ val javafxPlatform = when {
 
 java {
     toolchain { languageVersion = JavaLanguageVersion.of(25) }
+}
+
+kotlin {
+    jvmToolchain(25)
+    compilerOptions {
+        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_25)
+    }
 }
 
 repositories {
