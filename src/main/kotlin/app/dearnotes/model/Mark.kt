@@ -3,6 +3,7 @@ package app.dearnotes.model
 import app.dearnotes.isJavaBlank
 
 /** 行内の装飾。start は含み、end は含まない。target は PAGE のときだけ、リンク先のページの id。 */
+@ConsistentCopyVisibility // copy() も private にして、invoke の検証を飛ばせないようにする
 data class Mark private constructor(
     val start: Int,
     val end: Int,

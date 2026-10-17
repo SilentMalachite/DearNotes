@@ -1,6 +1,7 @@
 package app.dearnotes.model
 
 /** ページの1行。DB の blocks テーブルの1行に対応する。collapsed は子の行を畳んでいるか。 */
+@ConsistentCopyVisibility // copy() も private にして、invoke の正規化を飛ばせないようにする
 data class Block private constructor(
     val id: String,
     val pageId: String,

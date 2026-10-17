@@ -35,7 +35,6 @@ internal class DatabaseTest : DbTestBase() {
                     s.executeUpdate("INSERT INTO pages (id, sort_key, created_at, updated_at) VALUES ('x', 1, 0, 0)")
                     s.executeUpdate("INSERT INTO pages (id, sort_key, created_at, updated_at) VALUES ('x', 1, 0, 0)")
                 }
-                null
             }
         }
         assertTrue(pages.get("x") == null)

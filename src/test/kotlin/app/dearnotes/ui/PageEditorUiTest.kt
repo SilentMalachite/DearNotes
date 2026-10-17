@@ -1183,7 +1183,7 @@ class PageEditorUiTest {
 
     /** FX スレッドに積まれた後続の処理（runLater）が終わるまで待つ。 */
     private fun settle() {
-        repeat(3) { fx { null } }
+        repeat(3) { fx { } }
     }
 
     private fun <T> fx(work: () -> T): T {

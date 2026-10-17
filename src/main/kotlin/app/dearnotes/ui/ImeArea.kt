@@ -1,7 +1,6 @@
 package app.dearnotes.ui
 
 import java.util.ArrayList
-import java.util.Collection
 import java.util.Optional
 import javafx.geometry.Bounds
 import javafx.geometry.Point2D

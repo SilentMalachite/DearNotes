@@ -453,7 +453,7 @@ internal class PageEditor(
         val current = page ?: return
         val baseIndent = v.block().indent
         var last = v
-        var from = 0
+        val from: Int
         var tail = ""
         var tailMarks: List<Mark> = emptyList()
         if (v.block().type == BlockType.DIVIDER) {
