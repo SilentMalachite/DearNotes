@@ -9,7 +9,7 @@ DearNotes への不具合の報告や修正の提案を歓迎します。
 - OS と版（例: macOS 26.0 / Apple Silicon、Windows 11）
 - DearNotes の版（インストーラーの名前か、`build.gradle.kts` の `version`）
 - 何をしたら、どうなったか。本当はどうなってほしかったか
-- 日本語入力のときだけ起きるかどうか
+- 日本語入力のときだけ起きるかどうか。日本語入力の種類（macOS 標準、Google 日本語入力、Microsoft IME など）と、変えた設定があればそれも
 
 セキュリティの問題は Issues に書かず、[SECURITY.md](SECURITY.md) の方法で知らせてください。
 
@@ -21,7 +21,7 @@ JDK 25 が要ります。JavaFX は Gradle が取ってきます。
 
 ```sh
 ./gradlew run     # 起動
-./gradlew test    # テスト
+./gradlew check   # 全テストと core の検査
 ```
 
 ふだん使っているデータを壊さないよう、試すときは別のデータフォルダを使ってください。
