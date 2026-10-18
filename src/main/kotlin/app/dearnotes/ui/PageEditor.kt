@@ -192,7 +192,7 @@ internal class PageEditor(
                     target.focusEnd()
                     Platform.runLater { ensureVisible(target) }
                 }
-            } else if ((opened.title == null || opened.title.isJavaBlank()) && !opened.isDaily()) {
+            } else if (opened.title.let { it == null || it.isJavaBlank() } && !opened.isDaily()) {
                 title.requestFocus()
             } else {
                 views.first().focusEnd()

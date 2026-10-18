@@ -2,7 +2,7 @@ package app.dearnotes.model
 
 import app.dearnotes.isJavaBlank
 
-import java.time.LocalDate
+import kotlinx.datetime.LocalDate
 
 /** サイドバーに出るページ。dailyDate があれば日記。 */
 data class Page(

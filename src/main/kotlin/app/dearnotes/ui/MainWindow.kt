@@ -7,7 +7,6 @@ import app.dearnotes.model.Page
 import java.io.File
 import java.io.IOException
 import java.nio.file.Path
-import java.time.LocalDate
 import java.util.concurrent.TimeUnit
 import java.util.prefs.Preferences
 import javafx.geometry.Pos
@@ -30,6 +29,9 @@ import javafx.scene.layout.StackPane
 import javafx.stage.DirectoryChooser
 import javafx.stage.FileChooser
 import javafx.stage.Stage
+import kotlin.time.Clock
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.todayIn
 
 /** 左にサイドバー、右に開いているページ。 */
 class MainWindow(private val stage: Stage, private val s: Services) : Sidebar.Actions, PageEditor.Navigator {
@@ -185,7 +187,7 @@ class MainWindow(private val stage: Stage, private val s: Services) : Sidebar.Ac
     override fun openToday() {
         // 移れないときに日記を作ったりゴミ箱から戻したりしないよう、先に保存する
         if (!editor.flushBeforeLeaving()) return
-        val p = Errors.get("今日の日記を開く") { s.pages.openDaily(LocalDate.now()) } ?: return
+        val p = Errors.get("今日の日記を開く") { s.pages.openDaily(Clock.System.todayIn(TimeZone.currentSystemDefault())) } ?: return
         sidebar.reload(p.id)
         open(p)
     }

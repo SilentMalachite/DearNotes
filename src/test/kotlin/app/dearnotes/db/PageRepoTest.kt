@@ -4,7 +4,7 @@ import app.dearnotes.model.Block
 import app.dearnotes.model.BlockType
 import app.dearnotes.model.Page
 import java.sql.SQLException
-import java.time.LocalDate
+import kotlinx.datetime.LocalDate
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
@@ -26,8 +26,20 @@ internal class PageRepoTest : DbTestBase() {
     }
 
     @Test
+    fun dailyDateWrittenBy1xIsReadAsTheSameDay() {
+        db.write { c ->
+            c.createStatement().use { s ->
+                s.executeUpdate(
+                    "INSERT INTO pages (id, daily_date, sort_key, created_at, updated_at) VALUES ('d', '2026-10-11', 1, 0, 0)",
+                )
+            }
+        }
+        assertEquals(LocalDate(2026, 10, 11), pages.get("d")!!.dailyDate)
+    }
+
+    @Test
     fun openDailyTwiceCreatesOnePage() {
-        val day = LocalDate.of(2026, 10, 11)
+        val day = LocalDate(2026, 10, 11)
         val first = pages.openDaily(day)
         val second = pages.openDaily(day)
         assertEquals(first.id, second.id)
@@ -38,7 +50,7 @@ internal class PageRepoTest : DbTestBase() {
 
     @Test
     fun openDailyRestoresTrashedDiary() {
-        val day = LocalDate.of(2026, 10, 11)
+        val day = LocalDate(2026, 10, 11)
         val p = pages.openDaily(day)
         pages.trash(p.id, 1000L)
         val again = pages.openDaily(day)
@@ -48,7 +60,7 @@ internal class PageRepoTest : DbTestBase() {
 
     @Test
     fun openDailyRestoresChildrenTrashedTogether() {
-        val day = LocalDate.of(2026, 10, 11)
+        val day = LocalDate(2026, 10, 11)
         val diary = pages.openDaily(day)
         val child = pages.create(diary.id, "子")
         val earlier = pages.create(diary.id, "先に捨てた子")

@@ -13,6 +13,10 @@ kotlin {
         extraWarnings.set(true)
     }
     sourceSets {
+        commonMain.dependencies {
+            // Page.dailyDate が公開の型として使うので api にする
+            api("org.jetbrains.kotlinx:kotlinx-datetime:0.8.0")
+        }
         commonTest.dependencies {
             implementation(kotlin("test"))
         }
@@ -30,7 +34,7 @@ tasks.named<Test>("jvmTest") {
 }
 
 // ターゲットが JVM だけの間は、commonMain で JDK の API を使ってもコンパイルが通ってしまう。ここで止める
-val checkCommonPurity by tasks.registering {
+val checkCommonPurity = tasks.register("checkCommonPurity") {
     group = "verification"
     description = "commonMain で JVM 専用の API を使っていないか確かめる"
     val src = layout.projectDirectory.dir("src/commonMain")
