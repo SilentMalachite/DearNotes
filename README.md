@@ -97,13 +97,19 @@ macOS 15 からは、Finder で右クリックして「開く」を選ぶ方法�
 
 ## 構成
 
+画面に依存しないロジックは `core/`（Kotlin Multiplatform。今のターゲットは JVM だけ）に、アプリ本体はルートにあります。`core/src/commonMain` では JDK の API を使わず、`./gradlew check` で確かめます。
+
 ```
-src/main/kotlin/app/dearnotes
-├── Launcher, App   起動と終了（終了時に未保存の変更を書いてから DB を閉じる）
+core/src/commonMain/kotlin/app/dearnotes
 ├── model           Block, Page, BlockType, Mark, Ids (UUID v7), SortKeys
 ├── editor          Markdown ショートカット、「/」コマンド、貼り付けの解析、装飾の付け替え
+└── export          Markdown の書き出し（MarkdownWriter, Inline）
+
+src/main/kotlin/app/dearnotes
+├── Launcher, App   起動と終了（終了時に未保存の変更を書いてから DB を閉じる）
 ├── db              Database, Migrations, PageRepo, BlockRepo, SearchRepo
 ├── save            AutoSaver（書き込みスレッド）
+├── export          ExportTree（ファイルへの書き出し）
 └── ui              MainWindow, Sidebar, PageEditor, BlockView, ImeArea, SlashMenu, SearchDialog, TrashDialog
 ```
 
