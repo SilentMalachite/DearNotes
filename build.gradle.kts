@@ -2,6 +2,8 @@ import org.gradle.internal.os.OperatingSystem
 
 plugins {
     application
+    kotlin("jvm") version "2.4.21"
+    kotlin("multiplatform") version "2.4.21" apply false
 }
 
 group = "app.dearnotes"
@@ -24,11 +26,20 @@ java {
     toolchain { languageVersion = JavaLanguageVersion.of(25) }
 }
 
+kotlin {
+    jvmToolchain(25)
+    compilerOptions {
+        // 既定の警告に加えて、使っていない変数や不要な null 判定なども知らせる
+        extraWarnings.set(true)
+    }
+}
+
 repositories {
     mavenCentral()
 }
 
 dependencies {
+    implementation(project(":core"))
     for (module in listOf("base", "graphics", "controls")) {
         implementation("org.openjfx:javafx-$module:$javafxVersion:$javafxPlatform")
     }
@@ -45,17 +56,14 @@ application {
     applicationDefaultJvmArgs = listOf("--enable-native-access=ALL-UNNAMED")
 }
 
-tasks.withType<JavaCompile>().configureEach {
-    options.encoding = "UTF-8"
-    options.compilerArgs.addAll(listOf("-Xlint:all", "-Xlint:-serial"))
-}
-
 // ./gradlew run -Pdearnotes.dataDir=/tmp/x で、別のデータフォルダを使って試せる
 tasks.named<JavaExec>("run") {
     providers.gradleProperty("dearnotes.dataDir").orNull?.let { systemProperty("dearnotes.dataDir", it) }
 }
 
 tasks.test {
+    // `./gradlew test` で core のテストも走らせる（KMP の core には test タスクがない）
+    dependsOn(":core:jvmTest")
     useJUnitPlatform()
     jvmArgs("--enable-native-access=ALL-UNNAMED")
     // CI のログで、失敗したテストの期待値と実際の値、メッセージまで読めるようにする

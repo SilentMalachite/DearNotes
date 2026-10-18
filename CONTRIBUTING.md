@@ -9,7 +9,7 @@ DearNotes への不具合の報告や修正の提案を歓迎します。
 - OS と版（例: macOS 26.0 / Apple Silicon、Windows 11）
 - DearNotes の版（インストーラーの名前か、`build.gradle.kts` の `version`）
 - 何をしたら、どうなったか。本当はどうなってほしかったか
-- 日本語入力のときだけ起きるかどうか
+- 日本語入力のときだけ起きるかどうか。日本語入力の種類（macOS 標準、Google 日本語入力、Microsoft IME など）と、変えた設定があればそれも
 
 セキュリティの問題は Issues に書かず、[SECURITY.md](SECURITY.md) の方法で知らせてください。
 
@@ -21,7 +21,7 @@ JDK 25 が要ります。JavaFX は Gradle が取ってきます。
 
 ```sh
 ./gradlew run     # 起動
-./gradlew test    # テスト
+./gradlew check   # 全テストと core の検査
 ```
 
 ふだん使っているデータを壊さないよう、試すときは別のデータフォルダを使ってください。
@@ -36,7 +36,7 @@ JDK 25 が要ります。JavaFX は Gradle が取ってきます。
 
 1. `main` から作業用のブランチを作る（例: `fix/search-enter`、`feat/table-block`）
 2. 直したい動きを再現するテストを先に書き、落ちることを確かめてから直す
-3. `./gradlew test` がすべて通ることを確かめる。コンパイルの警告も出さない
+3. `./gradlew check` がすべて通ることを確かめる（全テストと、`core/src/commonMain` / `commonTest` で JDK の API を使っていないかの検査）。コンパイルの警告も出さない
 4. 利用者に見える変更なら、[CHANGELOG.md](CHANGELOG.md) の `[Unreleased]` に1行足す
 5. Pull Request を `main` に向けて出す。何を、なぜ変えたかと、どう確かめたかを書く
 
@@ -44,8 +44,9 @@ CI（GitHub Actions）で同じテストが動きます。通らない Pull Requ
 
 ### テスト
 
-- 画面の動きは `src/test/java/app/dearnotes/ui/PageEditorUiTest.java` のように、本物の画面にキーイベントを送って確かめる。画面のない環境では UI テストは飛ぶ
+- 画面の動きは `src/test/kotlin/app/dearnotes/ui/PageEditorUiTest.kt` のように、本物の画面にキーイベントを送って確かめる。画面のない環境では UI テストは飛ぶ
 - データベースのテストは `DbTestBase` を継いで、一時フォルダの SQLite で動かす
+- `core` のテストは、JDK に頼らないものを `core/src/commonTest`（kotlin.test）に、JDK と比べるものや JUnit の機能を使うものを `core/src/jvmTest` に置く
 
 ### コードの書き方
 

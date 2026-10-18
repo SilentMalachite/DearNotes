@@ -4,10 +4,10 @@
 [![Release](https://img.shields.io/github/v/release/SilentMalachite/DearNotes)](https://github.com/SilentMalachite/DearNotes/releases/latest)
 [![Downloads](https://img.shields.io/github/downloads/SilentMalachite/DearNotes/total)](https://github.com/SilentMalachite/DearNotes/releases)
 [![License](https://img.shields.io/github/license/SilentMalachite/DearNotes)](LICENSE)
-[![Java](https://img.shields.io/badge/Java-25-orange?logo=openjdk)](https://adoptium.net/)
+[![Kotlin](https://img.shields.io/badge/Kotlin-2.4-7F52FF?logo=kotlin)](https://kotlinlang.org/)
 [![Platform](https://img.shields.io/badge/platform-macOS%20%28Apple%20Silicon%29%20%7C%20Windows-lightgrey)](#ダウンロード)
 
-Notion のように1行ずつブロックで書く、手元で動くメモアプリです。Java 25、JavaFX、RichTextFX、SQLite で作っています。macOS と Windows 向けに jpackage でインストーラーを作れます。
+Notion のように1行ずつブロックで書く、手元で動くメモアプリです。Kotlin（JVM 25）、JavaFX、RichTextFX、SQLite で作っています。macOS と Windows 向けに jpackage でインストーラーを作れます。
 
 ## ダウンロード
 
@@ -19,7 +19,7 @@ Notion のように1行ずつブロックで書く、手元で動くメモアプ
 ## できること
 
 - 行頭に Markdown の記号を打つと、ブロックの種類が変わる（`# ` `## ` `### ` `- ` `1. ` `[] ` `> ` ```` ``` ```` `---`）。日本語入力のまま打った `＃　` なども同じに扱う
-- `/` を打つと種類の候補が出る。文字を足すと絞り込める（例: `/見` で見出し）
+- `/` を打つと種類の候補が出る。文字を足すと絞り込める（例: `/見` で見出し）。日本語入力のまま打った `／` や `・` でも出る。空の行には「「/」でコマンド」や「見出し 1」などの案内が薄く出る
 - Enter で次のブロック、空の行で Backspace を押すと消える。Tab / Shift+Tab で字下げ
 - 左端の `⋮⋮` をドラッグするか、Cmd/Ctrl+Shift+↑↓ で並べ替える
 - 文字を選んで Cmd/Ctrl+B（太字）、+I（斜体）、+E（コード）、+Shift+S（取り消し線）、+Shift+L（リンク。Cmd/Ctrl を押しながらクリックで開く）
@@ -34,12 +34,12 @@ Notion のように1行ずつブロックで書く、手元で動くメモアプ
 
 ## 動かす
 
-JDK 25 が要ります。JavaFX は Gradle が取ってくるので、JavaFX 入りの JDK でなくても構いません。
+JDK 25 が要ります。ソースは Kotlin です。JavaFX は Gradle が取ってくるので、JavaFX 入りの JDK でなくても構いません。
 
 ```sh
 ./gradlew run                                   # 起動
 ./gradlew run -Pdearnotes.dataDir=/tmp/dn-test  # 別のデータフォルダで試す
-./gradlew test                                  # テスト（UI テストは画面がない環境では飛ぶ）
+./gradlew check                                 # 全テストと core の検査（UI テストは画面がない環境では飛ぶ）
 ```
 
 データは次の場所の `dearnotes.db`（SQLite、WAL モード）に保存します。アプリを入れ直しても消えません。
@@ -97,17 +97,23 @@ macOS 15 からは、Finder で右クリックして「開く」を選ぶ方法�
 
 ## 構成
 
+画面に依存しないロジックは `core/`（Kotlin Multiplatform。今のターゲットは JVM だけ）に、アプリ本体はルートにあります。`core/src/commonMain` と `core/src/commonTest` では JDK の API を使わず、`./gradlew check` で確かめます。
+
 ```
-src/main/java/app/dearnotes
-├── Launcher, App   起動と終了（終了時に未保存の変更を書いてから DB を閉じる）
+core/src/commonMain/kotlin/app/dearnotes
 ├── model           Block, Page, BlockType, Mark, Ids (UUID v7), SortKeys
-├── editor          Markdown ショートカット、「/」コマンド、貼り付けの解析、装飾の付け替え
-├── db              Database, Migrations, PageRepo, BlockRepo, SearchRepo
-├── save            AutoSaver（書き込みスレッド）
-└── ui              MainWindow, Sidebar, PageEditor, BlockView, SlashMenu, SearchDialog, TrashDialog
+├── editor          Markdown ショートカット、「/」コマンド、ページ間リンク、折りたたみと目次、貼り付けの解析、装飾の付け替え
+└── export          Markdown の書き出し（MarkdownWriter, Inline, Links）
+
+src/main/kotlin/app/dearnotes
+├── Launcher, App   起動と終了（終了時に未保存の変更を書いてから DB を閉じる）
+├── db              Database, Migrations, DataDir, PageRepo, BlockRepo, SearchRepo
+├── save            AutoSaver（書き込みスレッド）, BlockStore, SaveStatus
+├── export          ExportTree（ファイルへの書き出し）
+└── ui              MainWindow, Sidebar, PageEditor, BlockView, ImeArea / ImeGuard（日本語入力）, SlashMenu, PageLinkMenu, Backlinks, OutlinePanel（目次）, SearchDialog, TrashDialog
 ```
 
-設計は `docs/plan/plan.html`、実装計画は `docs/plan/implementation.md` にあります。
+設計は `docs/plan/plan.html`、実装計画は `docs/plan/implementation.md` にあります。画面を JavaFX から Compose Multiplatform に移す計画は `docs/plan/kmp-migration-design.md`（設計）と `docs/plan/kmp-migration-plan-stage0-1.md`（段階 0〜1 の計画）に、日本語入力の点検表は `docs/plan/ime-checklist.md` にあります。
 
 ## v1 に入れないもの
 
