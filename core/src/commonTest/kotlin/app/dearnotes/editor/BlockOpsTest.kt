@@ -4,9 +4,9 @@ import app.dearnotes.model.Block
 import app.dearnotes.model.BlockType
 import app.dearnotes.model.BlockType.NUMBERED
 import app.dearnotes.model.BlockType.PARAGRAPH
-import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Assertions.assertNull
-import org.junit.jupiter.api.Test
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertNull
 
 class BlockOpsTest {
     private fun b(t: BlockType, indent: Int, key: Double) = Block.empty("p", t, key).withIndent(indent)

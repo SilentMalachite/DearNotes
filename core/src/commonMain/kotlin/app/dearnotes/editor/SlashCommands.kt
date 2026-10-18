@@ -4,7 +4,6 @@ import app.dearnotes.isJavaWhitespace
 import app.dearnotes.strip
 
 import app.dearnotes.model.BlockType
-import java.util.Locale
 
 /** 「/」のあとに打った文字でブロックの種類を絞り込む。 */
 object SlashCommands {
@@ -16,8 +15,8 @@ object SlashCommands {
     ) {
         internal fun matches(q: String): Boolean {
             if (q.isEmpty()) return true
-            val lower = q.lowercase(Locale.ROOT)
-            return label.lowercase(Locale.ROOT).contains(lower) || keywords.any { it.startsWith(lower) }
+            val lower = q.lowercase()
+            return label.lowercase().contains(lower) || keywords.any { it.startsWith(lower) }
         }
     }
 

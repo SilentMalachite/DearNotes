@@ -8,8 +8,8 @@ import app.dearnotes.model.BlockType.NUMBERED
 import app.dearnotes.model.BlockType.PARAGRAPH
 import app.dearnotes.model.BlockType.QUOTE
 import app.dearnotes.model.BlockType.TODO
-import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Test
+import kotlin.test.Test
+import kotlin.test.assertEquals
 
 class PasteParserTest {
     @Test

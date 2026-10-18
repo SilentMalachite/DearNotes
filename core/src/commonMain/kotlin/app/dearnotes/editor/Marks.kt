@@ -1,8 +1,6 @@
 package app.dearnotes.editor
 
 import app.dearnotes.model.Mark
-import java.util.Comparator.nullsFirst
-import java.util.Comparator.naturalOrder
 
 /** ブロックを分けたり繋げたりするときの装飾の付け替え。 */
 object Marks {
@@ -25,7 +23,7 @@ object Marks {
         marks.asSequence()
             .filter { it.style == Mark.Style.PAGE || it.style == Mark.Style.LINK }
             .filter { it.start <= index && index < it.end }
-            .minWithOrNull(Comparator.comparingInt { if (it.style == Mark.Style.PAGE) 0 else 1 })
+            .minWithOrNull(compareBy { if (it.style == Mark.Style.PAGE) 0 else 1 })
 
     /** a の後ろに長さ aLength の文字列が続くとして、b をずらして繋げる。 */
     fun concat(a: List<Mark>, aLength: Int, b: List<Mark>): List<Mark> {

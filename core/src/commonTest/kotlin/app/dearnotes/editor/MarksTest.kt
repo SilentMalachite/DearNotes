@@ -6,10 +6,10 @@ import app.dearnotes.model.Mark.Style.ITALIC
 import app.dearnotes.model.Mark.Style.LINK
 import app.dearnotes.model.Mark.Style.PAGE
 import app.dearnotes.model.Mark.Style.STRIKE
-import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Assertions.assertNull
-import org.junit.jupiter.api.Assertions.assertThrows
-import org.junit.jupiter.api.Test
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
+import kotlin.test.assertNull
 
 class MarksTest {
     @Test
@@ -75,7 +75,7 @@ class MarksTest {
 
     @Test
     fun pageNeedsTargetAndOtherStylesMustNotHaveOne() {
-        assertThrows(IllegalArgumentException::class.java) { Mark(0, 1, PAGE) }
-        assertThrows(IllegalArgumentException::class.java) { Mark(0, 1, BOLD, "x") }
+        assertFailsWith<IllegalArgumentException> { Mark(0, 1, PAGE) }
+        assertFailsWith<IllegalArgumentException> { Mark(0, 1, BOLD, "x") }
     }
 }
