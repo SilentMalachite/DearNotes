@@ -83,9 +83,9 @@ private class Block(text: String, bold: TextRange? = null) {
     val focus = FocusRequester()
 }
 
-/** 「/語句」か「／語句」だけなら語句。空白や改行を含めば null。 */
+/** 「/語句」「／語句」「・語句」だけなら語句。空白や改行を含めば null。 */
 private fun slashQuery(text: String): String? {
-    if (text.isEmpty() || (text[0] != '/' && text[0] != '／')) return null
+    if (text.isEmpty() || text[0] !in "/／・") return null
     val q = text.substring(1)
     return if (q.any { it.isWhitespace() }) null else q
 }
