@@ -97,7 +97,7 @@ macOS 15 からは、Finder で右クリックして「開く」を選ぶ方法�
 
 ## 構成
 
-画面に依存しないロジックは `core/`（Kotlin Multiplatform。今のターゲットは JVM だけ）に、アプリ本体はルートにあります。`core/src/commonMain` では JDK の API を使わず、`./gradlew check` で確かめます。
+画面に依存しないロジックは `core/`（Kotlin Multiplatform。今のターゲットは JVM だけ）に、アプリ本体はルートにあります。`core/src/commonMain` と `core/src/commonTest` では JDK の API を使わず、`./gradlew check` で確かめます。
 
 ```
 core/src/commonMain/kotlin/app/dearnotes

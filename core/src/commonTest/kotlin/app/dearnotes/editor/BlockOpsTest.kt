@@ -4,6 +4,7 @@ import app.dearnotes.model.Block
 import app.dearnotes.model.BlockType
 import app.dearnotes.model.BlockType.NUMBERED
 import app.dearnotes.model.BlockType.PARAGRAPH
+import kotlin.math.nextUp
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
@@ -55,7 +56,7 @@ class BlockOpsTest {
 
     @Test
     fun keysForMoveReturnsNullWhenNoRoom() {
-        val list = listOf(b(PARAGRAPH, 0, 1.0), b(PARAGRAPH, 0, Math.nextUp(1.0)), b(PARAGRAPH, 0, 5.0))
+        val list = listOf(b(PARAGRAPH, 0, 1.0), b(PARAGRAPH, 0, 1.0.nextUp()), b(PARAGRAPH, 0, 5.0))
         assertNull(BlockOps.keysForMove(list, 2, 1, 1))
     }
 }

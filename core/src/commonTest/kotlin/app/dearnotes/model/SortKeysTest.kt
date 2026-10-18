@@ -1,5 +1,6 @@
 package app.dearnotes.model
 
+import kotlin.math.nextUp
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
@@ -28,7 +29,7 @@ class SortKeysTest {
     @Test
     fun returnsNullWhenGapIsExhausted() {
         val lo = 1.0
-        val hi = Math.nextUp(lo)
+        val hi = lo.nextUp()
         assertNull(SortKeys.between(lo, hi))
     }
 

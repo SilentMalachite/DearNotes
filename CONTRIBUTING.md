@@ -36,7 +36,7 @@ JDK 25 が要ります。JavaFX は Gradle が取ってきます。
 
 1. `main` から作業用のブランチを作る（例: `fix/search-enter`、`feat/table-block`）
 2. 直したい動きを再現するテストを先に書き、落ちることを確かめてから直す
-3. `./gradlew check` がすべて通ることを確かめる（全テストと、`core/src/commonMain` で JDK の API を使っていないかの検査）。コンパイルの警告も出さない
+3. `./gradlew check` がすべて通ることを確かめる（全テストと、`core/src/commonMain` / `commonTest` で JDK の API を使っていないかの検査）。コンパイルの警告も出さない
 4. 利用者に見える変更なら、[CHANGELOG.md](CHANGELOG.md) の `[Unreleased]` に1行足す
 5. Pull Request を `main` に向けて出す。何を、なぜ変えたかと、どう確かめたかを書く
 
