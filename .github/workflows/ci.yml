@@ -20,8 +20,8 @@ jobs:
       - uses: actions/setup-java@v4
         with: { distribution: temurin, java-version: '25' }
       - uses: gradle/actions/setup-gradle@v4
-      # 画面のない Linux では UI テストは自動で飛ぶ。xvfb で動かす
+      # check は全テストと core の checkCommonPurity を含む。画面のない Linux では UI テストは自動で飛ぶので、xvfb で動かす
       - if: runner.os == 'Linux'
-        run: xvfb-run --auto-servernum ./gradlew test
+        run: xvfb-run --auto-servernum ./gradlew check
       - if: runner.os != 'Linux'
-        run: ./gradlew test
+        run: ./gradlew check

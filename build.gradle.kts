@@ -3,6 +3,7 @@ import org.gradle.internal.os.OperatingSystem
 plugins {
     application
     kotlin("jvm") version "2.4.21"
+    kotlin("multiplatform") version "2.4.21" apply false
 }
 
 group = "app.dearnotes"
@@ -38,6 +39,7 @@ repositories {
 }
 
 dependencies {
+    implementation(project(":core"))
     for (module in listOf("base", "graphics", "controls")) {
         implementation("org.openjfx:javafx-$module:$javafxVersion:$javafxPlatform")
     }
