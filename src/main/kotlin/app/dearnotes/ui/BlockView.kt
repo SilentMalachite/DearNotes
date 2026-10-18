@@ -110,18 +110,20 @@ internal class BlockView(
         area.styleClass.add("block-text")
         area.isWrapText = true
         area.isAutoHeight = true
-        area.setPlaceholder(placeholder)
+        // RichTextFX の案内は入力中の行に出ないので、自前で行頭に重ねる
         placeholder.styleClass.add("block-placeholder")
         placeholder.isMouseTransparent = true
+        StackPane.setAlignment(placeholder, Pos.TOP_LEFT)
         divider.styleClass.add("block-divider")
         divider.isMouseTransparent = true
         content.styleClass.add("block-content")
-        content.children.addAll(area, divider)
+        content.children.addAll(area, placeholder, divider)
         setHgrow(content, Priority.ALWAYS)
         content.maxWidth = Double.MAX_VALUE
 
         children.addAll(handle, indentSpacer, fold, gutter, content)
 
+        area.lengthProperty().addListener(ChangeListener { _, _, _ -> updatePlaceholder() })
         area.multiRichChanges().subscribe {
             if (!loading) onEdited()
         }
@@ -307,7 +309,7 @@ internal class BlockView(
             BlockType.H1, BlockType.H2, BlockType.H3 -> true
             else -> false
         }
-        placeholder.isVisible = heading || area.isFocused
+        placeholder.isVisible = area.length == 0 && (heading || area.isFocused)
     }
 
     private fun onEdited() {

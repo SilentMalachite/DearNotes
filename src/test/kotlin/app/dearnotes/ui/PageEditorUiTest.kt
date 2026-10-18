@@ -33,6 +33,7 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertSame
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Assumptions
@@ -209,6 +210,30 @@ class PageEditorUiTest {
         press(KeyCode.DOWN)
         press(KeyCode.ENTER)
         assertEquals(listOf("h2:0:"), summary())
+    }
+
+    @Test
+    fun headingPickedFromSlashMenuShowsItsNameAtLineStart() {
+        // 名前が出ないと、空の見出しは余白だけになり、カーソルが次の行に移ったように見える
+        focusFirstBlock()
+        type("/見")
+        press(KeyCode.ENTER)
+        val (text, dx) = fx {
+            val v = current()
+            val label = shownPlaceholder(v)
+            val area = v.area()
+            label?.text to label?.let { it.localToScene(it.layoutBounds).minX - area.localToScene(area.layoutBounds).minX }
+        }
+        assertEquals("見出し 1", text)
+        assertTrue(dx!! < 10.0, "行頭に出す: $dx")
+    }
+
+    @Test
+    fun placeholderShowsOnFocusedEmptyLineUntilTyped() {
+        focusFirstBlock()
+        assertEquals("「/」でコマンド", fx { shownPlaceholder(current())?.text })
+        type("a")
+        assertNull(fx { shownPlaceholder(current())?.text })
     }
 
     @Test
@@ -1136,6 +1161,18 @@ class PageEditorUiTest {
                 .map { v -> v.block().type.dbName() + ":" + v.block().indent + ":" + v.block().text }
         }
     }
+
+    /** 画面に出ている、空の行の案内。出ていなければ null。 */
+    private fun shownPlaceholder(v: BlockView): Label? =
+        v.lookupAll(".block-placeholder").filterIsInstance<Label>().firstOrNull { label ->
+            var n: Node? = label
+            var shown = true
+            while (n != null && n !== v) {
+                if (!n.isVisible) shown = false
+                n = n.parent
+            }
+            shown && n === v
+        }
 
     private fun current(): BlockView {
         val n = stage.getScene().getFocusOwner()

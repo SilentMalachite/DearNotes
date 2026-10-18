@@ -155,7 +155,7 @@
 .styled-text-area .caret { -fx-stroke: -dn-ink; }
 .styled-text-area .selection { -fx-fill: #cde0fb; }
 .block-text { -fx-padding: 3 2; }
-.block-placeholder { -fx-text-fill: #b9b7b1; -fx-font-size: 15px; }
+.block-placeholder { -fx-text-fill: #b9b7b1; -fx-font-size: 15px; -fx-padding: 3 2; }
 
 .block.h1 .styled-text-area .text { -fx-font-size: 27px; -fx-font-weight: bold; }
 .block.h2 .styled-text-area .text { -fx-font-size: 22px; -fx-font-weight: bold; }
