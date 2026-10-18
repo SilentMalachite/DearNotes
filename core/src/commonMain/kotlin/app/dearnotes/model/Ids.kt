@@ -22,11 +22,15 @@ object Ids {
         var next: Long
         while (true) {
             val prev = last.load()
-            next = if (now > prev ushr 12) (now shl 12) or seed else prev + 1
+            next = advance(prev, now, seed)
             if (last.compareAndSet(prev, next)) break
         }
         val msb = ((next ushr 12) shl 16) or (0x7L shl 12) or (next and 0xFFF)
         val lsb = (randomLow and 0x3FFF_FFFF_FFFF_FFFFL) or Long.MIN_VALUE
         return Uuid.fromLongs(msb, lsb).toString()
     }
+
+    /** 前回の状態 prev と今の時刻から、次の状態を決める。時計が戻っても前回より大きくなる。 */
+    internal fun advance(prev: Long, now: Long, seed: Long): Long =
+        if (now > prev ushr 12) (now shl 12) or seed else prev + 1
 }
