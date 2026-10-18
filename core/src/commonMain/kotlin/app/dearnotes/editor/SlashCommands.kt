@@ -38,9 +38,12 @@ object SlashCommands {
         return ALL.filter { it.matches(q) }
     }
 
-    /** ブロックの文字列が「/語句」だけなら語句を返す。そうでなければ null。 */
+    private const val TRIGGERS = "/\uFF0F\u30FB"
+
+    /** ブロックの文字列が「/語句」（「／」「・」でもよい）だけなら語句を返す。そうでなければ null。 */
     fun queryOf(text: String): String? {
-        if (!text.startsWith("/") || text.contains("\n")) return null
+        // 日本語入力のままだと「/」は「／」か「・」になる（Google 日本語入力の既定は「・」）
+        if (text.isEmpty() || text[0] !in TRIGGERS || text.contains("\n")) return null
         val q = text.substring(1)
         return if (q.any { it.isJavaWhitespace() }) null else q
     }
