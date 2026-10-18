@@ -4,10 +4,16 @@
 
 ## [Unreleased]
 
+## [1.3.3] - 2026-10-18
+
 ### 修正
 
 - 日本語入力のまま `/` キーを打つと `・`（Google 日本語入力の既定）や `／` が入り、スラッシュメニューが出ずに Enter で行が分かれていたのを直した。行頭の `／` と `・` でもメニューが出る
 - 空の行の案内（「「/」でコマンド」「見出し 1」など）が、カーソルのある行に出ていなかったのを直した。行頭に薄く出る。スラッシュメニューで見出しを選んだあと、カーソルが次の行に移ったように見えていた。カーソルのない空の見出しで、案内が行の中央に出ていたのも直した
+
+### 変更
+
+- ソースを Java から Kotlin に移し、画面に依存しない処理を共通のモジュール（`core`）にまとめた。保存するデータの形は変わらない
 
 ## [1.3.2] - 2026-10-13
 
@@ -78,7 +84,8 @@
 - 入力が 500ms 止まったら1本の書き込みスレッドで保存する自動保存と、終了時の書き出し
 - jlink と jpackage による macOS（.dmg）と Windows（.msi）のインストーラー
 
-[Unreleased]: https://github.com/SilentMalachite/DearNotes/compare/v1.3.2...HEAD
+[Unreleased]: https://github.com/SilentMalachite/DearNotes/compare/v1.3.3...HEAD
+[1.3.3]: https://github.com/SilentMalachite/DearNotes/compare/v1.3.2...v1.3.3
 [1.3.2]: https://github.com/SilentMalachite/DearNotes/compare/v1.3.1...v1.3.2
 [1.3.1]: https://github.com/SilentMalachite/DearNotes/compare/v1.3.0...v1.3.1
 [1.3.0]: https://github.com/SilentMalachite/DearNotes/compare/v1.2.0...v1.3.0
