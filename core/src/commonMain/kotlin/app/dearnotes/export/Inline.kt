@@ -4,12 +4,6 @@ import app.dearnotes.isJavaWhitespace
 
 import app.dearnotes.model.Mark
 import app.dearnotes.model.Mark.Style
-import java.util.Comparator
-import java.util.EnumMap
-import java.util.EnumSet
-import java.util.IdentityHashMap
-import java.util.TreeSet
-import java.util.regex.Pattern
 import kotlin.math.max
 
 /** 1ブロックの文字と装飾を、Markdown の行内の書き方にする。 */
@@ -18,14 +12,14 @@ internal object Inline {
     /** 装飾の外で \ を付ける記号。 */
     private const val SPECIAL = "\\`*_~[]<>"
 
-    private val SCHEME: Pattern = Pattern.compile("""[A-Za-z][A-Za-z0-9+.-]{1,31}:[^\s<>]*""")
-    private val HEADING: Pattern = Pattern.compile("""#{1,6}(\s.*)?""")
-    private val BULLET: Pattern = Pattern.compile("""[-+](\s.*)?""")
-    private val NUMBER: Pattern = Pattern.compile("""(\d{1,9})([.)])(\s.*)?""")
-    private val RULE: Pattern = Pattern.compile("""(-[ \t]*)+|=+[ \t]*""")
-    private val LEADING_BLANKS: Pattern = Pattern.compile("""^[ \t]+""")
-    private val ENTITY: Pattern =
-        Pattern.compile("&(?:#[0-9]{1,7}|#[xX][0-9a-fA-F]{1,6}|[A-Za-z][A-Za-z0-9]{1,31});")
+    private val SCHEME = Regex("""[A-Za-z][A-Za-z0-9+.-]{1,31}:[^\s<>]*""")
+    private val HEADING = Regex("""#{1,6}(\s.*)?""")
+    private val BULLET = Regex("""[-+](\s.*)?""")
+    private val NUMBER = Regex("""(\d{1,9})([.)])(\s.*)?""")
+    private val RULE = Regex("""(-[ \t]*)+|=+[ \t]*""")
+    private val LEADING_BLANKS = Regex("""^[ \t]+""")
+    private val ENTITY =
+        Regex("&(?:#[0-9]{1,7}|#[xX][0-9a-fA-F]{1,6}|[A-Za-z][A-Za-z0-9]{1,31});")
 
     /** 1つの装飾の続く範囲。 */
     private data class Segment(val start: Int, val end: Int, val styles: Set<Style>)
@@ -57,11 +51,11 @@ internal object Inline {
 
     private fun tokens(text: String, segments: List<Segment>, marks: List<Mark>, links: Links): List<Token> {
         val out = ArrayList<Token>()
-        val open = java.util.ArrayDeque<Style>()
+        val open = ArrayDeque<Style>()
         for (i in segments.indices) {
             val seg = segments[i]
             // 要らない装飾があれば、そこまで閉じる（後に開いたものから）
-            while (!seg.styles.containsAll(open)) out.add(Delim(open.pop(), false))
+            while (!seg.styles.containsAll(open)) out.add(Delim(open.removeLast(), false))
             val at = i
             seg.styles
                 .filter { s -> !open.contains(s) && !atom(s) }
@@ -73,7 +67,7 @@ internal object Inline {
                 )
                 .forEach { s ->
                     out.add(Delim(s, true))
-                    open.push(s)
+                    open.addLast(s)
                 }
             val part = text.substring(seg.start, seg.end)
             if (seg.styles.contains(Style.CODE)) {
@@ -94,7 +88,7 @@ internal object Inline {
                 out.add(Text(escape(part)))
             }
         }
-        while (!open.isEmpty()) out.add(Delim(open.pop(), false))
+        while (!open.isEmpty()) out.add(Delim(open.removeLast(), false))
         return out
     }
 
@@ -106,7 +100,8 @@ internal object Inline {
     private fun markersParse(tokens: List<Token>): Boolean {
         // 同じ文字の記号が続く並び（* か ~）
         class Run(val c: Char, val length: Int, val opens: Boolean, val closes: Boolean, val both: Boolean)
-        val runOf = IdentityHashMap<Delim, Run>()
+        // Delim は data class なので、同じ値の記号を別々に持つため、トークンの添字で引く
+        val runOf = HashMap<Int, Run>()
         var i = 0
         while (i < tokens.size) {
             val first = tokens[i]
@@ -134,14 +129,14 @@ internal object Inline {
             val right = !space(before) && (!punct(before) || space(after) || punct(after))
             if (opens && !left || closes && !right) return false
             val run = Run(c, length, opens, closes, left && right)
-            for (k in i until j) runOf[tokens[k] as Delim] = run
+            for (k in i until j) runOf[k] = run
             i = j
         }
         // 開きと閉じの組。同じ装飾は入れ子にならないので、次に来る閉じが組になる
-        val opened = EnumMap<Style, Run>(Style::class.java)
-        for (t in tokens) {
+        val opened = HashMap<Style, Run>()
+        for ((k, t) in tokens.withIndex()) {
             if (t !is Delim) continue
-            val run = runOf[t]!!
+            val run = runOf[k]!!
             if (t.open) {
                 opened[t.style] = run
                 continue
@@ -160,7 +155,7 @@ internal object Inline {
     private fun charBefore(tokens: List<Token>, i: Int): Int {
         for (k in i - 1 downTo 0) {
             val t = tokens[k]
-            if (t is Text && t.s.isNotEmpty()) return t.s.codePointBefore(t.s.length)
+            if (t is Text && t.s.isNotEmpty()) return t.s.lastCodePoint()
             if (t is Delim) return markerChar(t.style).code
         }
         return -1
@@ -170,7 +165,7 @@ internal object Inline {
     private fun charAfter(tokens: List<Token>, j: Int): Int {
         for (k in j until tokens.size) {
             val t = tokens[k]
-            if (t is Text && t.s.isNotEmpty()) return t.s.codePointAt(0)
+            if (t is Text && t.s.isNotEmpty()) return t.s.firstCodePoint()
             if (t is Delim) return markerChar(t.style).code
         }
         return -1
@@ -178,29 +173,12 @@ internal object Inline {
 
     /** CommonMark の空白。行の端も空白と見る。 */
     private fun space(c: Int): Boolean {
-        return c < 0 || Character.getType(c) == Character.SPACE_SEPARATOR.toInt()
+        return c < 0 || isSpaceSeparator(c)
             || c == '\t'.code || c == '\n'.code || c == '\r'.code || c == '\u000C'.code
     }
 
     /** CommonMark の句読点（Unicode の P と S）。 */
-    private fun punct(c: Int): Boolean {
-        if (c < 0) return false
-        return when (Character.getType(c)) {
-            Character.CONNECTOR_PUNCTUATION.toInt(),
-            Character.DASH_PUNCTUATION.toInt(),
-            Character.START_PUNCTUATION.toInt(),
-            Character.END_PUNCTUATION.toInt(),
-            Character.INITIAL_QUOTE_PUNCTUATION.toInt(),
-            Character.FINAL_QUOTE_PUNCTUATION.toInt(),
-            Character.OTHER_PUNCTUATION.toInt(),
-            Character.MATH_SYMBOL.toInt(),
-            Character.CURRENCY_SYMBOL.toInt(),
-            Character.MODIFIER_SYMBOL.toInt(),
-            Character.OTHER_SYMBOL.toInt(),
-            -> true
-            else -> false
-        }
-    }
+    private fun punct(c: Int): Boolean = c >= 0 && isPunctuationOrSymbol(c)
 
     /** 文字の外に出た範囲を切り、太字などの両端の空白を外に出す。 */
     private fun clean(text: String, marks: List<Mark>): List<Mark> {
@@ -219,14 +197,14 @@ internal object Inline {
 
     /** 装飾の境目で文字を切る。コードとリンクは途中で切らず、全体に掛かる装飾だけを残す。 */
     private fun segments(text: String, marks: List<Mark>): List<Segment> {
-        val cuts = TreeSet(listOf(0, text.length))
+        val cuts = mutableSetOf(0, text.length)
         for (m in marks) {
             cuts.add(m.start)
             cuts.add(m.end)
         }
         val out = ArrayList<Segment>()
         var prev: Int? = null
-        for (cut in cuts) {
+        for (cut in cuts.sorted()) {
             val from = prev
             if (from != null && from < cut) out.add(Segment(from, cut, stylesOver(marks, from, cut)))
             prev = cut
@@ -236,7 +214,7 @@ internal object Inline {
             val last = if (merged.isEmpty()) null else merged.last()
             val atomic = s.styles.any { style -> atom(style) }
             if (last != null && atomic && sameAtom(last, s, marks)) {
-                val both = EnumSet.noneOf(Style::class.java)
+                val both = mutableSetOf<Style>()
                 both.addAll(last.styles)
                 both.retainAll(s.styles)
                 merged[merged.size - 1] = Segment(last.start, s.end, both)
@@ -274,7 +252,7 @@ internal object Inline {
     }
 
     private fun stylesOver(marks: List<Mark>, start: Int, end: Int): Set<Style> {
-        val out = EnumSet.noneOf(Style::class.java)
+        val out = mutableSetOf<Style>()
         for (m in marks) {
             if (m.start <= start && end <= m.end) out.add(m.style)
         }
@@ -329,7 +307,7 @@ internal object Inline {
 
     /** スキームがあれば <url>。なければ [文字](文字)。 */
     private fun link(s: String): String {
-        if (SCHEME.matcher(s).matches()) return "<$s>"
+        if (SCHEME.matches(s)) return "<$s>"
         val target = s.replace("(", "%28").replace(")", "%29").replace(" ", "%20")
         return "[" + escape(s) + "](" + target + ")"
     }
@@ -346,10 +324,9 @@ internal object Inline {
     /** 装飾の外の文字。記号の前に \ を付ける。& は文字参照（&amp; など）に読まれるときだけ。 */
     fun escape(s: String): String {
         val sb = StringBuilder(s.length)
-        val entity = ENTITY.matcher(s)
         for (i in s.indices) {
             val c = s[i]
-            if (SPECIAL.indexOf(c) >= 0 || c == '&' && entity.region(i, s.length).lookingAt()) sb.append('\\')
+            if (SPECIAL.indexOf(c) >= 0 || c == '&' && ENTITY.matchesAt(s, i)) sb.append('\\')
             sb.append(c)
         }
         return sb.toString()
@@ -360,12 +337,15 @@ internal object Inline {
      * 行頭の半角の空白とタブは消す（4つあるとコードになる。表示では元から消える）。全角の空白は残す。
      */
     fun escapeLineStart(line: String): String {
-        val body = LEADING_BLANKS.matcher(line).replaceFirst("")
-        if (HEADING.matcher(body).matches() || BULLET.matcher(body).matches() || RULE.matcher(body).matches()) {
+        val body = LEADING_BLANKS.replaceFirst(line, "")
+        if (HEADING.matches(body) || BULLET.matches(body) || RULE.matches(body)) {
             return "\\" + body
         }
-        val num = NUMBER.matcher(body)
-        if (num.matches()) return num.group(1) + "\\" + body.substring(num.end(1))
+        val num = NUMBER.matchEntire(body)
+        if (num != null) {
+            val digits = num.groupValues[1]
+            return digits + "\\" + body.substring(digits.length)
+        }
         return body
     }
 }

@@ -62,6 +62,8 @@ tasks.named<JavaExec>("run") {
 }
 
 tasks.test {
+    // `./gradlew test` で core のテストも走らせる（KMP の core には test タスクがない）
+    dependsOn(":core:jvmTest")
     useJUnitPlatform()
     jvmArgs("--enable-native-access=ALL-UNNAMED")
     // CI のログで、失敗したテストの期待値と実際の値、メッセージまで読めるようにする

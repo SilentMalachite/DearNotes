@@ -14,8 +14,8 @@ import app.dearnotes.model.BlockType.QUOTE
 import app.dearnotes.model.BlockType.TODO
 import app.dearnotes.model.Mark
 import app.dearnotes.model.Page
-import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Test
+import kotlin.test.Test
+import kotlin.test.assertEquals
 
 internal class MarkdownWriterTest {
 

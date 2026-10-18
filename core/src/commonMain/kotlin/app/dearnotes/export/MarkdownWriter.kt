@@ -8,7 +8,6 @@ import app.dearnotes.editor.BlockOps
 import app.dearnotes.model.Block
 import app.dearnotes.model.BlockType
 import app.dearnotes.model.Page
-import java.util.regex.Pattern
 import kotlin.math.max
 
 /**
@@ -18,7 +17,7 @@ import kotlin.math.max
 object MarkdownWriter {
 
     /** 見出しの末尾の # は、閉じの記号と読まれる。 */
-    private val CLOSING_HASHES: Pattern = Pattern.compile("""(.*\s)(#+\s*)""")
+    private val CLOSING_HASHES = Regex("""(.*\s)(#+\s*)""")
 
     fun write(page: Page, blocks: List<Block>): String = write(page, blocks, Links.NONE)
 
@@ -133,8 +132,8 @@ object MarkdownWriter {
     /** 見出しの1行。行頭と末尾の # が、見出しの記号と読まれないようにする。 */
     private fun headingBody(out: StringBuilder, lead: String, body: String) {
         var text = body
-        val closing = CLOSING_HASHES.matcher(text)
-        if (closing.matches()) text = closing.group(1) + "\\" + closing.group(2)
+        val closing = CLOSING_HASHES.matchEntire(text)
+        if (closing != null) text = closing.groupValues[1] + "\\" + closing.groupValues[2]
         content(out, lead, text)
     }
 

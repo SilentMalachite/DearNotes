@@ -57,10 +57,3 @@ val checkCommonPurity = tasks.register("checkCommonPurity") {
 }
 
 tasks.named("check") { dependsOn(checkCommonPurity) }
-
-// ルートと同じく `./gradlew test` で core のテストも走るようにする
-tasks.register("test") {
-    group = "verification"
-    description = "core のテストを走らせる（jvmTest と同じ）"
-    dependsOn("jvmTest")
-}

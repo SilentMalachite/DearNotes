@@ -10,8 +10,8 @@ import app.dearnotes.model.Mark.Style.ITALIC
 import app.dearnotes.model.Mark.Style.LINK
 import app.dearnotes.model.Mark.Style.PAGE
 import app.dearnotes.model.Mark.Style.STRIKE
-import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Test
+import kotlin.test.Test
+import kotlin.test.assertEquals
 
 internal class InlineTest {
 
@@ -195,5 +195,32 @@ internal class InlineTest {
     fun leadingSpacesDoNotMakeACodeBlock() {
         assertEquals("\\*foo\\*", Inline.escapeLineStart("    \\*foo\\*"))
         assertEquals("\u3000全角の字下げは残す", Inline.escapeLineStart("\u3000全角の字下げは残す"))
+    }
+
+    // 以下は core へ移す前の出力を期待値として固定したもの（書き出しが変わらないことを確かめる）
+
+    @Test
+    fun emojiRightAfterBoldKeepsOutput() {
+        assertEquals("**太字**😀", Inline.write("太字😀", listOf(Mark(0, 2, BOLD))))
+    }
+
+    @Test
+    fun emojiRightBeforeBoldKeepsOutput() {
+        assertEquals("\uD83D\uDE00**太字**", Inline.write("\uD83D\uDE00太字", listOf(Mark(2, 4, BOLD))))
+    }
+
+    @Test
+    fun boldStartingWithEmojiAfterALetterKeepsOutput() {
+        assertEquals("a<strong>😀</strong>b", Inline.write("a😀b", listOf(Mark(1, 3, BOLD))))
+    }
+
+    @Test
+    fun repeatedSameStyleKeepsOutput() {
+        assertEquals("**a** b **a**", Inline.write("a b a", listOf(Mark(0, 1, BOLD), Mark(4, 5, BOLD))))
+    }
+
+    @Test
+    fun boldAndItalicRuleOfThreeKeepsOutput() {
+        assertEquals("***a*bc**", Inline.write("abc", listOf(Mark(0, 3, BOLD), Mark(0, 1, ITALIC))))
     }
 }
