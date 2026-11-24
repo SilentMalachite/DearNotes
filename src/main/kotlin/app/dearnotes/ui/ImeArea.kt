@@ -24,9 +24,11 @@ internal class ImeArea : StyleClassedTextArea() {
     private var imStart = 0
     private var imLength = 0
     private var applying = false
-    /** 直前の確定で入った文字。変換が終わったあとにリンクの印を外すため。 */
-    private var commitStart = 0
-    private var commitLength = 0
+    /** 直前の確定で入った未処理の文字範囲。部分確定を含む確定後にリンクの印を外すため。 */
+    internal data class CommitSpan(val start: Int, val length: Int)
+
+    private var pendingCommitStart = 0
+    private var pendingCommitLength = 0
 
     init {
         // 親が機能の有無で付けないことがあるので、ここで必ず付け替える
@@ -41,23 +43,28 @@ internal class ImeArea : StyleClassedTextArea() {
 
     fun claimsKey(e: KeyEvent): Boolean = ime.claims(e)
 
-    fun commitStart(): Int = commitStart
-
-    fun commitLength(): Int = commitLength
+    /** 未処理の確定範囲を取り出して消す。無ければ null。 */
+    fun consumeCommit(): CommitSpan? {
+        if (pendingCommitLength <= 0) return null
+        val span = CommitSpan(pendingCommitStart, pendingCommitLength)
+        pendingCommitStart = 0
+        pendingCommitLength = 0
+        return span
+    }
 
     /** 本文をまとめて入れ替えた。変換中の範囲はもう無い。 */
     fun noteDocumentReplaced() {
         imStart = 0
         imLength = 0
-        commitStart = 0
-        commitLength = 0
+        pendingCommitStart = 0
+        pendingCommitLength = 0
     }
 
     override fun handleInputMethodEvent(event: InputMethodEvent) {
         if (!isEditable || isDisabled) return
         applying = true
-        commitStart = 0
-        commitLength = 0
+        var commitStart = 0
+        var commitLength = 0
         try {
             if (imLength > 0) {
                 val start = imStart.coerceIn(0, length)
@@ -69,20 +76,30 @@ internal class ImeArea : StyleClassedTextArea() {
                 commitStart = selection.start
                 replaceText(selection, committed)
                 commitLength = committed.length
+                if (pendingCommitLength > 0 && pendingCommitStart + pendingCommitLength == commitStart) {
+                    pendingCommitLength += commitLength
+                } else {
+                    pendingCommitStart = commitStart
+                    pendingCommitLength = commitLength
+                }
             }
             // 確定の後ろ、または今選んでいる範囲を、新しい未確定文字列で置き換える
             imStart = selection.start
             val composed = composedText(event)
             replaceText(selection, composed)
             imLength = composed.length
+            val caretBeforeStyle = caretPosition
+            // 部分確定でも確定済みの文字からは下線を必ず外す
+            if (commitLength > 0) {
+                mapStyle(commitStart, commitStart + commitLength, ::withoutComposed)
+            }
             if (imLength > 0) {
                 mapStyle(imStart, imStart + imLength, ::withComposed)
                 val caretPos = event.caretPosition
                 val caret = if (caretPos >= 0 && caretPos < imLength) imStart + caretPos else imStart + imLength
                 selectRange(caret, caret)
             } else if (commitLength > 0) {
-                val caret = caretPosition
-                mapStyle(commitStart, commitStart + commitLength, ::withoutComposed)
+                val caret = caretBeforeStyle.coerceIn(0, length)
                 selectRange(caret, caret)
             }
         } finally {

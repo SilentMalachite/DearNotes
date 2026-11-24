@@ -1173,6 +1173,250 @@ class PageEditorUiTest {
         }
     }
 
+    @Test
+    fun imePartialCommitClearsUnderlineOnCommittedTextAndKeepsItOnComposedText() {
+        focusFirstBlock()
+        fx {
+            val area = current().area()
+            fireIme(area, "きょうとへいく", "")
+            for (i in 0 until area.length) {
+                assertTrue(area.getStyleOfChar(i).contains(ImeArea.COMPOSED))
+            }
+            // 部分確定: 「京都」を確定しつつ「へいく」は未確定のまま残す
+            fireIme(area, "へいく", "京都")
+            assertEquals("京都へいく", area.text)
+            assertFalse(area.getStyleOfChar(0).contains(ImeArea.COMPOSED))
+            assertFalse(area.getStyleOfChar(1).contains(ImeArea.COMPOSED))
+            assertTrue(area.getStyleOfChar(2).contains(ImeArea.COMPOSED))
+            assertTrue(area.getStyleOfChar(3).contains(ImeArea.COMPOSED))
+            assertTrue(area.getStyleOfChar(4).contains(ImeArea.COMPOSED))
+            // 残りを確定
+            fireIme(area, "", "へ行く")
+            assertEquals("京都へ行く", area.text)
+            for (i in 0 until area.length) {
+                assertFalse(area.getStyleOfChar(i).contains(ImeArea.COMPOSED))
+            }
+            null
+        }
+    }
+
+    @Test
+    fun imePartialCommitAtEndOfPageLinkUnlinksCommittedText() {
+        val p = pages.create(null, "部分確定リンク")
+        blocks.save(
+            listOf(
+                Block.empty(p.id, BlockType.PARAGRAPH, 1024.0)
+                    .withContent("京都", listOf(Mark(0, 2, Mark.Style.PAGE, "x"))),
+            ),
+            listOf(),
+        )
+        reopen(p.id)
+        focusEndOf(0)
+        fx {
+            val area = current().area()
+            fireIme(area, "へいく", "")
+            // 「へ」だけ先に部分確定し、「いく」は未確定のまま
+            fireIme(area, "いく", "へ")
+            null
+        }
+        settle()
+        // 部分確定した「へ」は未確定文字が残っていてもリンクから外れ、下線も消えている
+        assertFalse(fx { current().area().getStyleOfChar(2).contains(ImeArea.COMPOSED) })
+        assertNull(fx { StyledText.targetOf(current().area().getStyleOfChar(2)) })
+        assertTrue(fx { current().area().getStyleOfChar(3).contains(ImeArea.COMPOSED) })
+
+        fx {
+            fireIme(current().area(), "", "行く")
+            null
+        }
+        settle()
+        assertEquals("京都へ行く", fx { current().block().text })
+        assertEquals(listOf(Mark(0, 2, Mark.Style.PAGE, "x")), fx { current().block().marks })
+    }
+
+    @Test
+    fun imePartialCommitInsidePageLinkKeepsLink() {
+        val p = pages.create(null, "部分確定リンク内")
+        blocks.save(
+            listOf(
+                Block.empty(p.id, BlockType.PARAGRAPH, 1024.0)
+                    .withContent("京都", listOf(Mark(0, 2, Mark.Style.PAGE, "x"))),
+            ),
+            listOf(),
+        )
+        reopen(p.id)
+        fx {
+            window.editor().views().first().focusAt(1)
+            null
+        }
+        settle()
+        fx {
+            val area = current().area()
+            fireIme(area, "のまち", "")
+            fireIme(area, "まち", "の")
+            null
+        }
+        settle()
+        fx {
+            fireIme(current().area(), "", "町")
+            null
+        }
+        settle()
+        assertEquals("京の町都", fx { current().block().text })
+        assertEquals(listOf(Mark(0, 4, Mark.Style.PAGE, "x")), fx { current().block().marks })
+    }
+
+    @Test
+    fun searchDialogSuppressesKeysDuringImeCompositionAndRightAfterConfirmOrCancel() {
+        pages.create(null, "東京メモ")
+        pages.create(null, "京都メモ")
+        val opened = mutableListOf<String>()
+        val dialog = fx { SearchDialog(stage, services) { h -> opened.add(h.pageId) } }
+        fx {
+            dialog.field().text = "メモ"
+            dialog.show()
+            null
+        }
+        settle()
+        assertEquals(2, fx { dialog.results().items.size })
+        assertEquals(0, fx { dialog.results().selectionModel.selectedIndex })
+        assertTrue(fx { dialog.isShowing() })
+
+        // 変換中は ↓・↑・Enter・Esc のいずれも検索操作や閉じる動作を起こさない
+        fx {
+            val field = dialog.field()
+            fireIme(field, "とうきょう", "")
+            fireKey(field, KeyCode.DOWN)
+            assertEquals(0, dialog.results().selectionModel.selectedIndex)
+            fireKey(field, KeyCode.UP)
+            assertEquals(0, dialog.results().selectionModel.selectedIndex)
+            fireKey(field, KeyCode.ENTER)
+            assertTrue(opened.isEmpty())
+            assertTrue(dialog.isShowing())
+            fireKey(field, KeyCode.ESCAPE)
+            assertTrue(dialog.isShowing())
+
+            // 確定直後の Enter でも結果を開かない
+            fireIme(field, "", "メモ")
+            fireKey(field, KeyCode.ENTER)
+            assertTrue(opened.isEmpty())
+            assertTrue(dialog.isShowing())
+            null
+        }
+        settle()
+
+        // 変換取消（空確定）直後の Esc でも閉じない
+        fx {
+            val field = dialog.field()
+            fireIme(field, "あ", "")
+            fireIme(field, "", "")
+            fireKey(field, KeyCode.ESCAPE)
+            assertTrue(dialog.isShowing())
+            null
+        }
+        settle()
+
+        // 次のパルスでは ↓ と Enter が通常どおり動く
+        fx {
+            val field = dialog.field()
+            fireKey(field, KeyCode.DOWN)
+            assertEquals(1, dialog.results().selectionModel.selectedIndex)
+            fireKey(field, KeyCode.ENTER)
+            null
+        }
+        settle()
+        assertEquals(1, opened.size)
+        assertFalse(fx { dialog.isShowing() })
+    }
+
+    @Test
+    fun switchingPageAndRemovingBlockDisposeViewsAndClearPageLinkMenu() {
+        focusFirstBlock()
+        type("[[奈良")
+        press(KeyCode.ESCAPE)
+        val oldView = fx { window.editor().views().first() }
+        assertFalse(fx { oldView.isDisposed() })
+        assertTrue(fx { window.editor().isLinkDismissed(oldView, 0) })
+
+        val other = pages.create(null, "切替先")
+        fx {
+            window.open(other)
+            null
+        }
+        settle()
+        assertTrue(fx { oldView.isDisposed() })
+        assertFalse(fx { window.editor().isLinkDismissed(oldView, 0) })
+
+        // ブロック削除でも BlockView が破棄される
+        focusFirstBlock()
+        type("first")
+        press(KeyCode.ENTER)
+        type("second")
+        val secondView = fx { window.editor().views()[1] }
+        assertFalse(fx { secondView.isDisposed() })
+        fx {
+            secondView.focusAt(0)
+            null
+        }
+        settle()
+        press(KeyCode.BACK_SPACE)
+        assertTrue(fx { secondView.isDisposed() })
+        assertEquals(listOf("paragraph:0:firstsecond"), summary())
+    }
+
+    @Test
+    fun delayedShortcutAndStaleCallbacksOnDisposedViewDoNotCorruptPageOrResurrectBlock() {
+        val other = pages.create(null, "無傷のページ")
+        blocks.save(
+            listOf(Block.empty(other.id, BlockType.PARAGRAPH, 1024.0).withContent("元の本文", listOf())),
+            listOf(),
+        )
+        focusFirstBlock()
+        // 「---」で runLater の detectShortcut() を積み、実行前に別ページへ切り替える
+        val oldView = fx {
+            val v = window.editor().views().first()
+            v.area().replaceText("---")
+            window.open(other)
+            v
+        }
+        settle()
+        assertTrue(fx { oldView.isDisposed() })
+        assertEquals(other.id, fx { window.editor().page()!!.id })
+        assertEquals(listOf("paragraph:0:元の本文"), summary())
+
+        // 削除済みブロックのビューから Host コールバックが遅延到達しても、削除済みブロックを復活させない
+        focusFirstBlock()
+        fx {
+            window.editor().views().first().focusEnd()
+            null
+        }
+        settle()
+        press(KeyCode.ENTER)
+        type("消す行")
+        val deletedView = fx { window.editor().views()[1] }
+        fx {
+            deletedView.setContent("", listOf())
+            deletedView.focusAt(0)
+            null
+        }
+        settle()
+        press(KeyCode.BACK_SPACE)
+        assertTrue(fx { deletedView.isDisposed() })
+        assertTrue(saver.flushAndWait(2L, TimeUnit.SECONDS))
+
+        fx {
+            window.editor().edited(deletedView)
+            window.editor().convert(deletedView, BlockType.DIVIDER, 0)
+            window.editor().convert(deletedView, BlockType.H1, 0)
+            window.editor().enter(deletedView)
+            null
+        }
+        settle()
+        assertTrue(saver.flushAndWait(2L, TimeUnit.SECONDS))
+        assertEquals(listOf("paragraph:0:元の本文"), summary())
+        assertEquals(listOf("元の本文"), blocks.listByPage(other.id).map { it.text })
+    }
+
     // ---- helpers ----
 
     private enum class KeyMod { SHIFT, SHORTCUT }
@@ -1188,7 +1432,11 @@ class PageEditorUiTest {
     }
 
     private fun fireEnter(target: Node) {
-        target.fireEvent(KeyEvent(KeyEvent.KEY_PRESSED, "", "", KeyCode.ENTER,
+        fireKey(target, KeyCode.ENTER)
+    }
+
+    private fun fireKey(target: Node, code: KeyCode) {
+        target.fireEvent(KeyEvent(KeyEvent.KEY_PRESSED, "", "", code,
             false, false, false, false))
     }
 

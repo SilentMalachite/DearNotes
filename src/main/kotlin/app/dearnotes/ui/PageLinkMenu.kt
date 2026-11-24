@@ -1,6 +1,7 @@
 package app.dearnotes.ui
 
 import app.dearnotes.model.Page
+import java.lang.ref.WeakReference
 import javafx.scene.control.Label
 import javafx.scene.control.ListCell
 import javafx.scene.control.ListView
@@ -20,8 +21,8 @@ internal class PageLinkMenu(
     private val list = ListView<Choice>()
     private var target: BlockView? = null
     private var from = 0
-    /** Esc で閉じた「[[」。同じ「[[」の後ろで打ち続けても、候補を出し直さない。 */
-    private var dismissedView: BlockView? = null
+    /** Esc で閉じた「[[」。同じ「[[」の後ろで打ち続けても、候補を出し直さない。旧ページの BlockView を強参照しないよう弱参照で持つ。 */
+    private var dismissedView: WeakReference<BlockView>? = null
     private var dismissedFrom = -1
 
     init {
@@ -82,12 +83,13 @@ internal class PageLinkMenu(
     }
 
     /** v の from の「[[」を Esc で閉じたか。 */
-    fun dismissed(v: BlockView, from: Int): Boolean = v == dismissedView && from == dismissedFrom
+    fun dismissed(v: BlockView, from: Int): Boolean = dismissedView?.get() === v && from == dismissedFrom
 
     /** v の「[[」が無くなった。閉じて、Esc で閉じたことも忘れる。 */
     fun forget(v: BlockView) {
         close(v)
-        if (v == dismissedView) {
+        val ref = dismissedView?.get()
+        if (ref == null || ref === v) {
             dismissedView = null
             dismissedFrom = -1
         }
@@ -102,7 +104,7 @@ internal class PageLinkMenu(
             KeyCode.DOWN -> sel.select(Math.min(list.items.size - 1, sel.selectedIndex + 1))
             KeyCode.ENTER, KeyCode.TAB -> pick()
             KeyCode.ESCAPE -> {
-                dismissedView = v
+                dismissedView = WeakReference(v)
                 dismissedFrom = from
                 hide()
             }
@@ -115,6 +117,13 @@ internal class PageLinkMenu(
     fun hide() {
         popup.hide()
         target = null
+    }
+
+    /** 候補を閉じ、Esc で閉じた記憶も消す（ページ切替のとき）。 */
+    fun clear() {
+        hide()
+        dismissedView = null
+        dismissedFrom = -1
     }
 
     private fun pick() {

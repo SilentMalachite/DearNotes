@@ -41,6 +41,8 @@ internal class SearchDialog(
 
         field.promptText = "ページを検索…"
         field.styleClass.add("search-field")
+        // 変換中の ↑↓・Enter・Esc や確定・取消直後の Enter・Esc で検索操作が誤動作しないようにする
+        ImeGuard().install(field)
         field.textProperty().addListener(ChangeListener { _, _, _ -> debounce.playFromStart() })
         debounce.setOnFinished { runSearch() }
 
@@ -120,6 +122,8 @@ internal class SearchDialog(
     fun field(): TextField = field
 
     fun results(): ListView<Hit> = results
+
+    fun isShowing(): Boolean = stage.isShowing
 
     fun show() {
         // 書きかけの変更も探せるように、先に書いておく

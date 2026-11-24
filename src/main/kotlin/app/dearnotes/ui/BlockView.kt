@@ -29,6 +29,7 @@ import javafx.scene.layout.Region
 import javafx.scene.layout.StackPane
 import org.fxmisc.richtext.StyleClassedTextArea
 import org.fxmisc.richtext.model.ReadOnlyStyledDocument
+import org.reactfx.Subscription
 
 /** ブロック1つ分の行。左からハンドル、記号（点・番号・チェック）、本文。 */
 internal class BlockView(
@@ -79,13 +80,18 @@ internal class BlockView(
     private var linking = false
     private var foldable = false
     private var hidden = false
+    private var disposed = false
+    private val richSub: Subscription
+    private val textSub: Subscription
 
     init {
         styleClass.add("block")
         alignment = Pos.TOP_LEFT
 
         handle.styleClass.add("block-handle")
-        handle.setOnDragDetected { e -> host.dragStarted(this, e) }
+        handle.setOnDragDetected { e ->
+            if (!disposed) host.dragStarted(this, e)
+        }
 
         // ▸▾ の枠は、畳めない行でも幅を取って本文の位置をそろえる
         // 文字の ▸ は字体によって点になるので、図形で描く。向きは CSS で変える
@@ -93,6 +99,7 @@ internal class BlockView(
         foldArrow.styleClass.add("block-fold-arrow")
         fold.children.add(foldArrow)
         fold.setOnMouseClicked { e ->
+            if (disposed) return@setOnMouseClicked
             host.toggleFold(this)
             e.consume()
         }
@@ -101,6 +108,7 @@ internal class BlockView(
         bullet.styleClass.add("block-bullet")
         check.isFocusTraversable = false
         check.setOnAction {
+            if (disposed) return@setOnAction
             this.block = this.block.withChecked(check.isSelected)
             pseudoUpdate()
             host.edited(this)
@@ -123,43 +131,72 @@ internal class BlockView(
 
         children.addAll(handle, indentSpacer, fold, gutter, content)
 
-        area.lengthProperty().addListener(ChangeListener { _, _, _ -> updatePlaceholder() })
-        area.multiRichChanges().subscribe {
-            if (!loading) onEdited()
+        area.lengthProperty().addListener(ChangeListener { _, _, _ ->
+            if (!disposed) updatePlaceholder()
+        })
+        richSub = area.multiRichChanges().subscribe {
+            if (!loading && !disposed) onEdited()
         }
-        area.plainTextChanges().subscribe { ch ->
+        textSub = area.plainTextChanges().subscribe { ch ->
             // 変換中の置き換えでは調べない。確定した文字は finishImeCommit で調べる。
             // 日本語入力では「＃　」がまとめて確定されることもあるので、短い入力なら調べる
-            if (loading || area.isApplyingIme()) return@subscribe
+            if (loading || disposed || area.isApplyingIme()) return@subscribe
             val n = ch.inserted.length
             // 元に戻すときは、消す前の装飾ごと戻すので触らない。
             // 記号の変換は行頭を消して位置がずれるので、リンクの印を外してから調べる
             if (!linking && n >= 1 && !area.undoManager.isPerformingAction) {
-                Platform.runLater { unlink(ch.position, n) }
+                Platform.runLater {
+                    if (disposed) return@runLater
+                    unlink(ch.position, n)
+                }
             }
-            if (n >= 1 && n <= 4) Platform.runLater { detectShortcut() }
+            if (n >= 1 && n <= 4) {
+                Platform.runLater {
+                    if (disposed) return@runLater
+                    detectShortcut()
+                }
+            }
         }
         // ←→ やクリックでカーソルが「[[」から離れたら、ページの候補を閉じる
         area.caretPositionProperty().addListener(ChangeListener { _, _, _ ->
-            if (!loading) host.linkQuery(this)
+            if (!loading && !disposed) host.linkQuery(this)
         })
         area.focusedProperty().addListener(ChangeListener { _, _, now ->
+            if (disposed) return@ChangeListener
             updatePlaceholder()
             if (now == true) host.focused(this) else host.blurred(this)
         })
-        // 確定のあと、変換中に触れなかったリンクの印と行頭の記号を調べる
+        // 確定（部分確定を含む）のあと、変換中に触れなかったリンクの印と行頭の記号を調べる
         area.addEventFilter(InputMethodEvent.INPUT_METHOD_TEXT_CHANGED) { e ->
-            if (e.composed != null && e.composed.isNotEmpty()) return@addEventFilter
-            Platform.runLater { finishImeCommit() }
+            if (disposed) return@addEventFilter
+            val hasComposed = e.composed != null && e.composed.isNotEmpty()
+            val hasCommitted = !e.committed.isNullOrEmpty()
+            if (hasComposed && !hasCommitted) return@addEventFilter
+            Platform.runLater {
+                if (disposed) return@runLater
+                finishImeCommit()
+            }
         }
         area.addEventFilter(KeyEvent.KEY_PRESSED, ::onKeyPressed)
         area.addEventFilter(ScrollEvent.SCROLL) { e ->
+            if (disposed) return@addEventFilter
             e.consume()
             host.scroll(e.deltaY)
         }
         area.addEventFilter(MouseEvent.MOUSE_CLICKED, ::onClicked)
 
         load()
+    }
+
+    fun isDisposed(): Boolean = disposed
+
+    /** ページ切替やブロック削除のときに呼び、購読と RichTextFX の資源を解放する。 */
+    fun dispose() {
+        if (disposed) return
+        disposed = true
+        richSub.unsubscribe()
+        textSub.unsubscribe()
+        area.dispose()
     }
 
     fun block(): Block = block
@@ -313,6 +350,7 @@ internal class BlockView(
     }
 
     private fun onEdited() {
+        if (disposed) return
         val text = area.text
         val marks = if (block.type == BlockType.CODE) emptyList() else StyledText.read(area)
         if (text == block.text && marks == block.marks) return
@@ -329,29 +367,38 @@ internal class BlockView(
      * 前と後ろの文字が同じリンクなら、リンクの途中の入力なので残す。
      */
     private fun unlink(at: Int, length: Int) {
+        if (disposed) return
         val end = at + length
-        if (end > area.length) return
+        if (at < 0 || length <= 0 || end > area.length) return
         val target = StyledText.targetOf(area.getStyleOfChar(at)) ?: return
         val text = area.text
         val before = at > 0 && text[at - 1] != '\n'
             && target == StyledText.targetOf(area.getStyleOfChar(at - 1))
-        val after = end < text.length && text[end] != '\n'
-            && target == StyledText.targetOf(area.getStyleOfChar(end))
+        // 部分確定の直後は確定範囲の後ろに未確定文字（ime-composed）が続く。
+        // 未確定文字は前のリンク装飾を引き継ぐだけなので、それを越えた先の文字で判定する
+        var afterPos = end
+        while (afterPos < text.length && text[afterPos] != '\n'
+            && area.getStyleOfChar(afterPos).contains(ImeArea.COMPOSED)
+        ) {
+            afterPos++
+        }
+        val after = afterPos < text.length && text[afterPos] != '\n'
+            && target == StyledText.targetOf(area.getStyleOfChar(afterPos))
         if (before && after) return
         area.setStyleSpans(at, area.getStyleSpans(at, end).mapStyles { StyledText.withoutPage(it) })
     }
 
     /** 変換が終わった文字について、リンクの印と行頭の記号を調べる。 */
     private fun finishImeCommit() {
-        if (area.isComposing()) return
-        val n = area.commitLength()
-        if (n > 0) unlink(area.commitStart(), n)
-        detectShortcut()
+        if (disposed) return
+        val committed = area.consumeCommit()
+        if (committed != null) unlink(committed.start, committed.length)
+        if (!area.isComposing()) detectShortcut()
     }
 
     /** 行頭に「# 」などを打ったら、その種類に変える。 */
     private fun detectShortcut() {
-        if (block.type != BlockType.PARAGRAPH || area.isComposing()) return
+        if (disposed || block.type != BlockType.PARAGRAPH || area.isComposing()) return
         val hit = MarkdownShortcuts.detect(area.text, area.caretPosition) ?: return
         // 「---」「#」などの名前のページへのリンクは記号ではない。変えるとリンクが消える
         if (StyledText.read(area).any { m -> m.style == Mark.Style.PAGE && m.start < hit.prefixLength }) return
@@ -359,6 +406,7 @@ internal class BlockView(
     }
 
     private fun onKeyPressed(e: KeyEvent) {
+        if (disposed) return
         // 変換中と、確定に使った Enter は行の分割に使わない。消費しないと改行が入る
         if (area.claimsKey(e)) {
             e.consume()
@@ -498,7 +546,7 @@ internal class BlockView(
 
     /** Cmd/Ctrl を押しながらリンクを押すと開く。ページへのリンクなら、そのページへ移る。 */
     private fun onClicked(e: MouseEvent) {
-        if (!e.isShortcutDown) return
+        if (disposed || !e.isShortcutDown) return
         // 文字と文字の間ではなく、押した文字そのものを見る（行の文字より右を押したときは何もしない）
         val at = area.hit(e.x, e.y).characterIndex
         if (at.isEmpty) return

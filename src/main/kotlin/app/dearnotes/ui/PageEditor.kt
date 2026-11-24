@@ -112,6 +112,8 @@ internal class PageEditor(
 
     fun backlinks(): Backlinks = backlinks
 
+    internal fun isLinkDismissed(v: BlockView, from: Int): Boolean = links.dismissed(v, from)
+
     /** 見出しや並び、カーソルのある節が変わったときに呼ぶ。目次を作り直すため。 */
     fun setOutlineListener(listener: () -> Unit) {
         outlineListener = listener
@@ -135,7 +137,7 @@ internal class PageEditor(
         reveal(v)
         v.focusEnd()
         outlineListener()
-        Platform.runLater { scrollToTop(v) }
+        Platform.runLater { if (isActive(v)) scrollToTop(v) }
     }
 
     /**
@@ -171,9 +173,7 @@ internal class PageEditor(
         loadingTitle = false
         iconButton.text = opened.displayIcon()
 
-        views.clear()
-        blockBox.children.clear()
-        lastFocused = null
+        disposeViews()
         for (b in loaded) addView(views.size, b)
         if (views.isEmpty()) {
             val first = Block.empty(opened.id, BlockType.PARAGRAPH, SortKeys.GAP)
@@ -185,17 +185,18 @@ internal class PageEditor(
         scrollPane?.vvalue = 0.0
 
         Platform.runLater {
+            if (page?.id != opened.id) return@runLater
             if (focusBlockId != null) {
                 val target = views.firstOrNull { it.block().id == focusBlockId }
                 if (target != null) {
                     reveal(target)
                     target.focusEnd()
-                    Platform.runLater { ensureVisible(target) }
+                    Platform.runLater { if (isActive(target)) ensureVisible(target) }
                 }
             } else if (opened.title.let { it == null || it.isJavaBlank() } && !opened.isDaily()) {
                 title.requestFocus()
             } else {
-                views.first().focusEnd()
+                views.firstOrNull()?.focusEnd()
             }
         }
         return true
@@ -220,13 +221,16 @@ internal class PageEditor(
     }
 
     override fun edited(v: BlockView) {
+        if (!isActive(v)) return
         s.saver.changed(v.block())
         if (v.block().type == BlockType.NUMBERED) refreshNumbers()
         if (Outline.level(v.block().type) > 0) outlineListener()
     }
 
     override fun enter(v: BlockView) {
+        if (v.isDisposed()) return
         val idx = views.indexOf(v)
+        if (idx < 0) return
         val b = v.block()
         val text = v.text()
         val caret = v.caret()
@@ -266,7 +270,9 @@ internal class PageEditor(
     }
 
     override fun backspaceAtStart(v: BlockView) {
+        if (v.isDisposed()) return
         val idx = views.indexOf(v)
+        if (idx < 0) return
         val b = v.block()
         if (b.type == BlockType.DIVIDER) {
             remove(v)
@@ -305,7 +311,9 @@ internal class PageEditor(
     }
 
     override fun deleteAtEnd(v: BlockView) {
+        if (v.isDisposed()) return
         val idx = views.indexOf(v)
+        if (idx < 0) return
         if (v.block().type == BlockType.DIVIDER) {
             // 区切り線に他の行の文字を入れない。区切り線そのものを消す
             remove(v)
@@ -326,8 +334,10 @@ internal class PageEditor(
     }
 
     override fun indent(v: BlockView, delta: Int) {
-        val b = v.block()
+        if (v.isDisposed()) return
         val idx = views.indexOf(v)
+        if (idx < 0) return
+        val b = v.block()
         // 1つ上より2段以上深くはしない
         val max = if (idx == 0) 0 else views[idx - 1].block().indent + 1
         // 畳んだ行は隠れた行も一緒に字下げを変える。見出しの節は字下げで決まらないので自分だけ
@@ -347,7 +357,10 @@ internal class PageEditor(
     }
 
     override fun focusPrevious(v: BlockView) {
-        val idx = visibleBefore(views.indexOf(v))
+        if (v.isDisposed()) return
+        val from = views.indexOf(v)
+        if (from < 0) return
+        val idx = visibleBefore(from)
         if (idx >= 0) {
             views[idx].focusEnd()
             ensureVisible(views[idx])
@@ -358,7 +371,10 @@ internal class PageEditor(
     }
 
     override fun focusNext(v: BlockView) {
-        val idx = visibleAfter(views.indexOf(v))
+        if (v.isDisposed()) return
+        val from = views.indexOf(v)
+        if (from < 0) return
+        val idx = visibleAfter(from)
         if (idx >= 0) {
             views[idx].focusAt(0)
             ensureVisible(views[idx])
@@ -366,7 +382,9 @@ internal class PageEditor(
     }
 
     override fun moveBy(v: BlockView, delta: Int) {
+        if (v.isDisposed()) return
         val from = views.indexOf(v)
+        if (from < 0) return
         val count = groupSize(from)
         // 隣の畳んだ行は、隠れた行ごと飛び越える
         val insertAt = if (delta < 0) {
@@ -387,6 +405,10 @@ internal class PageEditor(
     }
 
     override fun convert(v: BlockView, type: BlockType, prefixLength: Int) {
+        // 破棄済み・別ページのビューから遅延実行で届いた変換は無視する
+        if (v.isDisposed()) return
+        val idx = views.indexOf(v)
+        if (idx < 0) return
         val b = v.block()
         val text = v.text()
         val cut = minOf(prefixLength, text.length)
@@ -395,7 +417,6 @@ internal class PageEditor(
         val current = page ?: return
         if (type == BlockType.DIVIDER) {
             change(v, b.withType(type).withContent("", emptyList()))
-            val idx = views.indexOf(v)
             val next = Block.empty(current.id, BlockType.PARAGRAPH, 0.0).withIndent(b.indent)
                 .withContent(rest, marks)
             insertBlock(idx + 1, next).focusAt(0)
@@ -406,18 +427,26 @@ internal class PageEditor(
     }
 
     override fun slashQuery(v: BlockView, query: String?) {
+        if (!isActive(v)) {
+            slash.update(v, null)
+            return
+        }
         slash.update(v, query)
     }
 
-    override fun slashKey(v: BlockView, e: KeyEvent): Boolean = links.handleKey(v, e) || slash.handleKey(v, e)
+    override fun slashKey(v: BlockView, e: KeyEvent): Boolean {
+        if (!isActive(v)) return false
+        return links.handleKey(v, e) || slash.handleKey(v, e)
+    }
 
     override fun linkQuery(v: BlockView) {
+        if (!isActive(v)) return
         // 文字とカーソルの両方の変化で呼ばれるので、1回にまとめる。カーソルが動き終わってから読む
         if (!linkQueryPending.add(v)) return
         Platform.runLater {
             linkQueryPending.remove(v)
             val focused = v.scene != null && v.scene.focusOwner == v.area()
-            if (!views.contains(v) || !focused || v.block().type == BlockType.CODE) {
+            if (!isActive(v) || !focused || v.block().type == BlockType.CODE) {
                 links.close(v)
                 return@runLater
             }
@@ -448,6 +477,7 @@ internal class PageEditor(
     }
 
     override fun pasteLines(v: BlockView, text: String) {
+        if (!isActive(v)) return
         val lines = PasteParser.parse(text)
         if (lines.isEmpty()) return
         val current = page ?: return
@@ -508,6 +538,7 @@ internal class PageEditor(
     }
 
     override fun focused(v: BlockView) {
+        if (!isActive(v)) return
         if (slash.isShowing() && slash.target() != v) slash.hide()
         lastFocused = v
         outlineListener()
@@ -522,6 +553,7 @@ internal class PageEditor(
     }
 
     override fun dragStarted(v: BlockView, e: MouseEvent) {
+        if (!isActive(v)) return
         dragging = v
         val db = v.startDragAndDrop(TransferMode.MOVE)
         val content = ClipboardContent()
@@ -532,6 +564,7 @@ internal class PageEditor(
     }
 
     override fun toggleFold(v: BlockView) {
+        if (v.isDisposed()) return
         val idx = views.indexOf(v)
         if (idx < 0 || !Outline.hasChildren(blocks(), idx)) return
         val collapse = !v.block().collapsed
@@ -551,6 +584,7 @@ internal class PageEditor(
 
     /** 「[[語句」を、選んだページへのリンクに置き換える。新しいページの行なら、先に子ページを作る。 */
     private fun applyPageLink(v: BlockView, from: Int, c: PageLinkMenu.Choice) {
+        if (!isActive(v)) return
         // 候補を出した後にカーソルが動いていたら、置き換える範囲が違うのでやめる（ページも作らない）
         val q = PageLinks.queryAt(v.text(), v.caret())
         if (q == null || q.from != from) return
@@ -591,14 +625,36 @@ internal class PageEditor(
         val v = addView(index, placed)
         s.saver.changed(placed)
         refreshLayout()
-        Platform.runLater { ensureVisible(v) }
+        Platform.runLater { if (isActive(v)) ensureVisible(v) }
         return v
+    }
+
+    /** v が破棄されておらず、いま開いているページの行一覧に含まれているか。 */
+    private fun isActive(v: BlockView): Boolean = !v.isDisposed() && views.contains(v)
+
+    /** 表示中のブロックをすべて破棄して購読と RichTextFX の資源を解放する。 */
+    private fun disposeViews() {
+        slash.hide()
+        links.clear()
+        linkQueryPending.clear()
+        dragging = null
+        lastFocused = null
+        val old = ArrayList(views)
+        views.clear()
+        blockBox.children.clear()
+        for (v in old) v.dispose()
     }
 
     private fun remove(v: BlockView) {
         val current = page
+        slash.update(v, null)
+        links.forget(v)
+        linkQueryPending.remove(v)
+        if (dragging == v) dragging = null
+        if (lastFocused == v) lastFocused = null
         views.remove(v)
         blockBox.children.remove(v)
+        v.dispose()
         s.saver.deleted(v.block().id)
         if (views.isEmpty() && current != null) {
             val first = Block.empty(current.id, BlockType.PARAGRAPH, SortKeys.GAP)
@@ -665,7 +721,7 @@ internal class PageEditor(
 
     private fun dropOn(v: BlockView, e: DragEvent) {
         val moving = dragging
-        if (moving == null || moving == v) return
+        if (moving == null || moving == v || !isActive(moving) || !isActive(v)) return
         val above = e.y < v.height / 2
         v.setDropHint(null)
         val from = views.indexOf(moving)
