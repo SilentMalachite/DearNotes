@@ -502,10 +502,25 @@ internal class BlockView(
         // 文字と文字の間ではなく、押した文字そのものを見る（行の文字より右を押したときは何もしない）
         val at = area.hit(e.x, e.y).characterIndex
         if (at.isEmpty) return
-        val m = Marks.linkAt(block.marks, at.asInt) ?: return
-        if (m.style == Mark.Style.PAGE) host.openPage(m.target!!)
-        else host.openLink(block.text.substring(m.start, m.end).strip())
-        e.consume()
+        if (openLinkAt(at.asInt)) e.consume()
+    }
+
+    /** index 位置のリンクを開く。範囲が本文外でも安全にクランプし、開けたら true。 */
+    internal fun openLinkAt(index: Int): Boolean {
+        val m = Marks.linkAt(block.marks, index) ?: return false
+        if (m.style == Mark.Style.PAGE) {
+            val target = m.target ?: return false
+            host.openPage(target)
+        } else {
+            val text = block.text
+            val start = m.start.coerceIn(0, text.length)
+            val end = m.end.coerceIn(start, text.length)
+            if (start >= end) return false
+            val url = text.substring(start, end).strip()
+            if (url.isEmpty()) return false
+            host.openLink(url)
+        }
+        return true
     }
 
     companion object {

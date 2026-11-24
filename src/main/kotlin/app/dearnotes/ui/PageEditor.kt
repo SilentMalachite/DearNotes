@@ -143,9 +143,9 @@ internal class PageEditor(
      * 書けなかったら知らせて false。そのときはページを作ったり戻したりもしない。
      */
     fun flushBeforeLeaving(): Boolean {
-        saveTitle()
         slash.hide()
         links.hide()
+        if (!saveTitle()) return false
         if (s.saver.flushAndWait(3, TimeUnit.SECONDS) || page == null) return true
         Errors.warn(
             "保存できていない変更があります",

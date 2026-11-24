@@ -108,17 +108,15 @@ class MainWindow(private val stage: Stage, private val s: Services) : Sidebar.Ac
         }
     }
 
-    /**
-     * 閉じる前に、名前と書きかけのブロックを書く。
-     * 書けなかったら尋ね、閉じるのをやめるなら false。
-     */
     fun flushTitle() {
         editor.saveTitle()
     }
 
-    fun flushAll(): Boolean {
-        editor.saveTitle()
-        if (s.saver.flushAndWait(5, TimeUnit.SECONDS)) return true
+    /**
+     * 閉じる前に、名前と書きかけのブロックを書く。
+     * 書けなかったら尋ね、閉じるのをやめるなら false。
+     */
+    fun flushAll(): Boolean = flushAll {
         val alert = Alert(
             Alert.AlertType.CONFIRMATION,
             "保存できていない変更があります。いま終了すると、その変更は失われます。",
@@ -128,7 +126,15 @@ class MainWindow(private val stage: Stage, private val s: Services) : Sidebar.Ac
         alert.initOwner(stage)
         alert.headerText = "保存できませんでした"
         (alert.dialogPane.lookupButton(ButtonType.OK) as Button).text = "終了する"
-        return alert.showAndWait().orElse(null) == ButtonType.OK
+        alert.showAndWait().orElse(null) == ButtonType.OK
+    }
+
+    internal fun flushAll(confirmDiscard: () -> Boolean): Boolean {
+        // 片方が失敗しても、もう片方の保存は必ず試みる（ショートサーキットさせない）
+        val titleSaved = editor.saveTitle()
+        val blocksSaved = s.saver.flushAndWait(5, TimeUnit.SECONDS)
+        if (titleSaved && blocksSaved) return true
+        return confirmDiscard()
     }
 
     internal fun editor(): PageEditor = editor

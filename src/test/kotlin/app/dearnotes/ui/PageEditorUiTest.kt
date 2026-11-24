@@ -63,6 +63,8 @@ class PageEditorUiTest {
     @Volatile
     private var failSaves = false
 
+    private val openedLinks = mutableListOf<String>()
+
     companion object {
         private var fxReady = false
 
@@ -94,7 +96,8 @@ class PageEditorUiTest {
             if (failSaves) throw SQLException("database is locked")
             blocks.save(upserts, deletes)
         }, Platform::runLater, 50L, 1000L)
-        services = Services(db, pages, blocks, SearchRepo(db), saver) { _ -> }
+        openedLinks.clear()
+        services = Services(db, pages, blocks, SearchRepo(db), saver) { url -> openedLinks.add(url) }
         fx {
             stage = Stage()
             window = MainWindow(stage, services)
@@ -647,6 +650,115 @@ class PageEditorUiTest {
         settle()
         assertEquals(pageId, fx { window.editor().page()!!.id })
         assertEquals(listOf("paragraph:0:AB"), summary())
+    }
+
+    @Test
+    fun failedTitleSaveBlocksLeavingAndKeepsUnsavedTitle() {
+        val pageId = fx { window.editor().page()!!.id }
+        val other = pages.create(null, "別のページ")
+        val before = pages.listAlive().size
+
+        // タイトル変更の UPDATE だけ失敗させる
+        db.write { c ->
+            c.createStatement().use { st ->
+                st.executeUpdate(
+                    "CREATE TRIGGER fail_page_rename BEFORE UPDATE OF title ON pages " +
+                        "BEGIN SELECT RAISE(ABORT, 'pages locked'); END",
+                )
+            }
+        }
+        fx {
+            val field = stage.getScene().lookup(".page-title") as TextField
+            field.text = "未保存タイトル"
+            assertFalse(window.editor().flushBeforeLeaving())
+            window.open(other)
+            window.newPage(null)
+            window.openToday()
+            null
+        }
+        settle()
+
+        // タイトル保存が失敗したときはページを切り替えず、新規作成もしない
+        assertEquals(pageId, fx { window.editor().page()!!.id })
+        assertEquals(before, pages.listAlive().size)
+        assertEquals("未保存タイトル", fx { (stage.getScene().lookup(".page-title") as TextField).text })
+
+        db.write { c ->
+            c.createStatement().use { st ->
+                st.executeUpdate("DROP TRIGGER fail_page_rename")
+            }
+        }
+        fx {
+            window.open(other)
+            null
+        }
+        settle()
+        assertEquals(other.id, fx { window.editor().page()!!.id })
+        assertEquals("未保存タイトル", pages.get(pageId)?.title)
+    }
+
+    @Test
+    fun flushAllReturnsFalseOnTitleSaveFailureAndStillFlushesBlocks() {
+        focusFirstBlock()
+        val pageId = fx { window.editor().page()!!.id }
+        type("ブロック本文")
+
+        db.write { c ->
+            c.createStatement().use { st ->
+                st.executeUpdate(
+                    "CREATE TRIGGER fail_page_rename BEFORE UPDATE OF title ON pages " +
+                        "BEGIN SELECT RAISE(ABORT, 'pages locked'); END",
+                )
+            }
+        }
+        var confirmCalled = false
+        val closed = fx {
+            val field = stage.getScene().lookup(".page-title") as TextField
+            field.text = "失敗タイトル"
+            window.flushAll {
+                confirmCalled = true
+                false
+            }
+        }
+        assertFalse(closed)
+        assertTrue(confirmCalled)
+        // タイトル保存に失敗しても、ブロック側の flushAndWait はショートサーキットされずに実行される
+        assertEquals(listOf("ブロック本文"), blocks.listByPage(pageId).map { it.text })
+
+        db.write { c ->
+            c.createStatement().use { st ->
+                st.executeUpdate("DROP TRIGGER fail_page_rename")
+            }
+        }
+        confirmCalled = false
+        val savedBoth = fx {
+            window.flushAll {
+                confirmCalled = true
+                false
+            }
+        }
+        assertTrue(savedBoth)
+        assertFalse(confirmCalled)
+        assertEquals("失敗タイトル", pages.get(pageId)?.title)
+    }
+
+    @Test
+    fun linkClickWithOutOfBoundsMarkClampsSafelyWithoutThrowing() {
+        focusFirstBlock()
+        fx {
+            val v = window.editor().views().first()
+            // 本文長を超える範囲のリンクマーク（破損データ等）
+            v.setBlock(v.block().withContent("https://example.com", listOf(Mark(0, 100, Mark.Style.LINK))))
+            assertTrue(v.openLinkAt(0))
+            // 本文の完全に外にある範囲
+            v.setBlock(v.block().withContent("abc", listOf(Mark(50, 60, Mark.Style.LINK))))
+            assertFalse(v.openLinkAt(55))
+            // 空白のみのリンク範囲
+            v.setBlock(v.block().withContent("   ", listOf(Mark(0, 10, Mark.Style.LINK))))
+            assertFalse(v.openLinkAt(0))
+            null
+        }
+        assertEquals(listOf("https://example.com"), openedLinks)
     }
 
     @Test
