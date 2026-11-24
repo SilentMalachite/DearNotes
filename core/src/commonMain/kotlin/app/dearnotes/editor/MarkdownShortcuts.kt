@@ -32,7 +32,7 @@ object MarkdownShortcuts {
         for (c in s) {
             if (c in '\uFF01'..'\uFF5E') sb.append((c.code - 0xFEE0).toChar())
             else if (c == '\u3000') sb.append(' ')
-            else if (c == 'ー' || c == '－' || c == '―') sb.append('-')
+            else if (c == 'ー' || c == '―') sb.append('-')
             else if (c == '「' || c == '【') sb.append('[')
             else if (c == '」' || c == '】') sb.append(']')
             else if (c == '。') sb.append('.')

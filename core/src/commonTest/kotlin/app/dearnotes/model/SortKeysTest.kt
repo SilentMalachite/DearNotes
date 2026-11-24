@@ -12,7 +12,7 @@ class SortKeysTest {
     }
 
     @Test
-    fun firstKeyInEmptyListIsGap() {
+    fun firstKeyInEmptyListIsHalfGap() {
         assertEquals(512.0, SortKeys.between(null, null))
     }
 

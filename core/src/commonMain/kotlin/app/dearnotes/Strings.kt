@@ -5,7 +5,7 @@ package app.dearnotes
  * Kotlin の isWhitespace は NBSP（U+00A0, U+2007, U+202F）も空白にするが、こちらは空白にしない。
  */
 fun Char.isJavaWhitespace(): Boolean = when (this) {
-    ' ', ' ', ' ' -> false
+    '\u00A0', '\u2007', '\u202F' -> false
     '\t', '\n', '\u000B', '\u000C', '\r', '\u001C', '\u001D', '\u001E', '\u001F' -> true
     else -> category == CharCategory.SPACE_SEPARATOR ||
         category == CharCategory.LINE_SEPARATOR ||

@@ -1,7 +1,6 @@
 package app.dearnotes.editor
 
 import app.dearnotes.isJavaBlank
-import app.dearnotes.stripLeading
 
 import app.dearnotes.model.Block
 import app.dearnotes.model.BlockType
@@ -20,13 +19,13 @@ object PasteParser {
         var i = 0
         while (i < raw.size) {
             val line = raw[i]
-            val body = line.stripLeading()
+            val body = stripLeadingAsciiBlanks(line)
             val indent = indentOf(line)
             val fenceLen = openingFenceLength(body)
             if (fenceLen > 0) {
                 val code = ArrayList<String>()
                 var j = i + 1
-                while (j < raw.size && !isClosingFence(raw[j].stripLeading(), fenceLen)) {
+                while (j < raw.size && !isClosingFence(stripLeadingAsciiBlanks(raw[j]), fenceLen)) {
                     code.add(raw[j])
                     j++
                 }
@@ -85,6 +84,9 @@ object PasteParser {
         }
         return true
     }
+
+    /** 行頭の半角スペースとタブだけを外す。全角スペース（U+3000）は Inline.escapeLineStart と揃えて残す。 */
+    private fun stripLeadingAsciiBlanks(s: String): String = s.trimStart { it == ' ' || it == '\t' }
 
     /** タブ1つか空白2つで1段。 */
     private fun indentOf(line: String): Int {

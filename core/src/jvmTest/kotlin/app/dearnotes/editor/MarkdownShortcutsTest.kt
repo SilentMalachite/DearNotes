@@ -53,6 +53,7 @@ class MarkdownShortcutsTest {
             "'＃　'     | H1",
             "'＃＃　'   | H2",
             "'ー　'     | BULLET",
+            "'－　'     | BULLET",
             "'１．　'   | NUMBERED",
             "'１。　'   | NUMBERED",
             "'「」　'   | TODO",

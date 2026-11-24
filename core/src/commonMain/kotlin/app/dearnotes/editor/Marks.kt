@@ -25,7 +25,7 @@ object Marks {
             .filter { it.start <= index && index < it.end }
             .minWithOrNull(compareBy { if (it.style == Mark.Style.PAGE) 0 else 1 })
 
-    /** a の後ろに長さ aLength の文字列が続くとして、b をずらして繋げる。 */
+    /** 長さ aLength の文字列（装飾は a）の後ろに b の文字列が続くとして、b をずらして繋げる。 */
     fun concat(a: List<Mark>, aLength: Int, b: List<Mark>): List<Mark> {
         val out = ArrayList(a)
         for (m in b) out.add(m.withRange(m.start + aLength, m.end + aLength))

@@ -112,4 +112,18 @@ class PasteParserTest {
             PasteParser.parse(md),
         )
     }
+
+    @Test
+    fun preservesLeadingFullWidthSpace() {
+        val md = "\u3000吾輩は猫である。\n  \u3000字下げ後の全角空白\n\u3000# 見出しではない\n\u3000\n```\n\u3000```\n```"
+        assertEquals(
+            listOf(
+                PasteParser.Line(PARAGRAPH, "\u3000吾輩は猫である。", 0, false),
+                PasteParser.Line(PARAGRAPH, "\u3000字下げ後の全角空白", 1, false),
+                PasteParser.Line(PARAGRAPH, "\u3000# 見出しではない", 0, false),
+                PasteParser.Line(CODE, "\u3000```", 0, false),
+            ),
+            PasteParser.parse(md),
+        )
+    }
 }

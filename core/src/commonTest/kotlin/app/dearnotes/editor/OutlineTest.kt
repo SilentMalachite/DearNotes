@@ -8,11 +8,11 @@ import app.dearnotes.model.BlockType.H2
 import app.dearnotes.model.BlockType.H3
 import app.dearnotes.model.BlockType.PARAGRAPH
 import app.dearnotes.model.BlockType.TODO
-import org.junit.jupiter.api.Assertions.assertArrayEquals
-import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Assertions.assertFalse
-import org.junit.jupiter.api.Assertions.assertTrue
-import org.junit.jupiter.api.Test
+import kotlin.test.Test
+import kotlin.test.assertContentEquals
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 
 class OutlineTest {
     private fun b(t: BlockType, indent: Int, text: String) =
@@ -103,7 +103,7 @@ class OutlineTest {
             b(PARAGRAPH, 0, "帰る"),
         )
         val hidden = Outline.hidden(list)
-        assertArrayEquals(booleanArrayOf(false, true, true, true, false, false, true, false), hidden)
+        assertContentEquals(booleanArrayOf(false, true, true, true, false, false, true, false), hidden)
     }
 
     @Test
