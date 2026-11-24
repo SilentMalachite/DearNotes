@@ -7,6 +7,7 @@ import javafx.scene.control.ListCell
 import javafx.scene.control.ListView
 import javafx.scene.input.KeyCode
 import javafx.scene.input.KeyEvent
+import javafx.scene.input.MouseButton
 import javafx.scene.layout.HBox
 import javafx.scene.layout.Priority
 import javafx.scene.layout.Region
@@ -28,6 +29,15 @@ internal class SlashMenu(
         list.fixedCellSize = 28.0
         list.setCellFactory {
             object : ListCell<Command>() {
+                init {
+                    // スクロールバーや空白領域のクリックで誤確定しないよう、非空セルの左クリックのみ確定する
+                    setOnMouseClicked { e ->
+                        val cmd = item
+                        if (e.button != MouseButton.PRIMARY || isEmpty || cmd == null) return@setOnMouseClicked
+                        pick(cmd)
+                    }
+                }
+
                 override fun updateItem(c: Command?, empty: Boolean) {
                     super.updateItem(c, empty)
                     if (empty || c == null) {
@@ -43,7 +53,6 @@ internal class SlashMenu(
                 }
             }
         }
-        list.setOnMouseClicked { pick() }
         popup.content.add(list)
         popup.isAutoHide = true
         popup.setOnHidden { target = null }
@@ -52,6 +61,8 @@ internal class SlashMenu(
     fun isShowing(): Boolean = popup.isShowing
 
     fun target(): BlockView? = target
+
+    internal fun list(): ListView<Command> = list
 
     fun update(v: BlockView, query: String?) {
         if (query == null) {
@@ -96,8 +107,7 @@ internal class SlashMenu(
         target = null
     }
 
-    private fun pick() {
-        val c = list.selectionModel.selectedItem
+    private fun pick(c: Command? = list.selectionModel.selectedItem) {
         val v = target
         hide()
         if (c != null && v != null) onPick(v, c)

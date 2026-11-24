@@ -7,6 +7,7 @@ import javafx.scene.control.ListCell
 import javafx.scene.control.ListView
 import javafx.scene.input.KeyCode
 import javafx.scene.input.KeyEvent
+import javafx.scene.input.MouseButton
 import javafx.stage.Popup
 
 /** 「[[」で出るページの候補。フォーカスはエリアに残し、キーは BlockView から受け取る。 */
@@ -32,6 +33,15 @@ internal class PageLinkMenu(
         list.fixedCellSize = ROW
         list.setCellFactory {
             object : ListCell<Choice>() {
+                init {
+                    // スクロールバーや空白領域のクリックで誤確定しないよう、非空セルの左クリックのみ確定する
+                    setOnMouseClicked { e ->
+                        val choice = item
+                        if (e.button != MouseButton.PRIMARY || isEmpty || choice == null) return@setOnMouseClicked
+                        pick(choice)
+                    }
+                }
+
                 override fun updateItem(c: Choice?, empty: Boolean) {
                     super.updateItem(c, empty)
                     if (empty || c == null) {
@@ -46,7 +56,6 @@ internal class PageLinkMenu(
                 }
             }
         }
-        list.setOnMouseClicked { pick() }
         popup.content.add(list)
         popup.isAutoHide = true
         // Esc は Popup が先に取ってしまうので、handleKey で受けて閉じたことを覚える
@@ -55,6 +64,8 @@ internal class PageLinkMenu(
     }
 
     fun isShowing(): Boolean = popup.isShowing
+
+    internal fun list(): ListView<Choice> = list
 
     /** v のカーソルの下に候補を出す。from は「[[」の位置。候補がなければ閉じる。 */
     fun show(v: BlockView, from: Int, items: List<Choice>) {
@@ -126,8 +137,7 @@ internal class PageLinkMenu(
         dismissedFrom = -1
     }
 
-    private fun pick() {
-        val c = list.selectionModel.selectedItem
+    private fun pick(c: Choice? = list.selectionModel.selectedItem) {
         val v = target
         val at = from
         hide()

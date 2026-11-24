@@ -40,6 +40,8 @@ internal class Sidebar(
         fun showSearch()
         fun exportPage(p: Page)
         fun exportTree(p: Page)
+        /** ドラッグ&ドロップでページの親子・並びが変わった。 */
+        fun pageMoved()
     }
 
     enum class Drop { BEFORE, INTO, AFTER }
@@ -91,12 +93,18 @@ internal class Sidebar(
         children.values.forEach { it.sortWith(Comparator.comparingDouble(Page::sortKey)) }
 
         val top = children[null] ?: emptyList()
-        pagesSection.children.setAll(top.filter { !it.isDaily() }.map { build(it, children) })
-        dailySection.children.setAll(
-            top.filter { it.isDaily() }
-                .sortedWith(compareByDescending { it.dailyDate })
-                .map { build(it, children) },
-        )
+        // 木の作り直し中に選択変更イベントが発火して別ページへ誤遷移するのを防ぐ
+        selecting = true
+        try {
+            pagesSection.children.setAll(top.filter { !it.isDaily() }.map { build(it, children) })
+            dailySection.children.setAll(
+                top.filter { it.isDaily() }
+                    .sortedWith(compareByDescending { it.dailyDate })
+                    .map { build(it, children) },
+            )
+        } finally {
+            selecting = false
+        }
         select(selectedId)
     }
 
@@ -164,22 +172,43 @@ internal class Sidebar(
         return b
     }
 
-    private fun dropOnto(target: Page, where: Drop) {
-        val moving = dragging ?: return
-        if (moving.id == target.id) return
+    private fun dropOnto(target: Page, where: Drop): Boolean {
+        val moving = dragging ?: return false
+        return moveOnto(moving, target, where)
+    }
+
+    /** moving を target の前後または子に移動する。並べ替えや再読込に失敗したら移動を中断して false。 */
+    internal fun moveOnto(moving: Page, target: Page, where: Drop): Boolean {
+        if (moving.id == target.id) return false
         val parentId = if (where == Drop.INTO) target.id else target.parentId
         var key = keyFor(alive, parentId, moving, target, where)
         if (key == null) {
-            Errors.run("並べ替え") { s.pages.respaceChildren(parentId) }
-            alive = Errors.get("ページの一覧を読む") { s.pages.listAlive() } ?: emptyList()
-            val fresh = alive.firstOrNull { it.id == target.id } ?: target
-            key = keyFor(alive, parentId, moving, fresh, where)
+            if (!Errors.run("並べ替え") { s.pages.respaceChildren(parentId) }) return false
+            val reloaded = Errors.get("ページの一覧を読む") { s.pages.listAlive() } ?: return false
+            alive = reloaded
+            val fresh = alive.firstOrNull { it.id == target.id } ?: return false
+            key = keyFor(alive, parentId, moving, fresh, where) ?: return false
         }
-        val k = key ?: SortKeys.GAP
-        if (Errors.run("ページを移動") { s.pages.move(moving.id, parentId, k) }) {
-            if (where == Drop.INTO) expanded.add(target.id)
-            reload(currentId)
+        if (!Errors.run("ページを移動") { s.pages.move(moving.id, parentId, key) }) return false
+        if (where == Drop.INTO) expanded.add(target.id)
+        reload(currentId)
+        actions.pageMoved()
+        return true
+    }
+
+    /** moving をルート階層の末尾へ移動する。間隔が詰まっていれば振り直し、失敗時は中断して false。 */
+    internal fun moveToRoot(moving: Page): Boolean {
+        var key = SortKeys.between(lastTopKey(alive, moving), null)
+        if (key == null) {
+            if (!Errors.run("並べ替え") { s.pages.respaceChildren(null) }) return false
+            val reloaded = Errors.get("ページの一覧を読む") { s.pages.listAlive() } ?: return false
+            alive = reloaded
+            key = SortKeys.between(lastTopKey(alive, moving), null) ?: return false
         }
+        if (!Errors.run("ページを移動") { s.pages.move(moving.id, null, key) }) return false
+        reload(currentId)
+        actions.pageMoved()
+        return true
     }
 
     private inner class PageCell : TreeCell<Entry>() {
@@ -206,25 +235,17 @@ internal class Sidebar(
                 val moving = dragging
                 if (moving != null && where != null) {
                     val entry = item
-                    if (entry is PageEntry) {
-                        dropOnto(entry.page, where)
-                    } else if (entry is Section && !entry.daily) {
-                        val key = SortKeys.between(lastTopKey(moving), null)
-                        val k = key ?: SortKeys.GAP
-                        if (Errors.run("ページを移動") { s.pages.move(moving.id, null, k) }) reload(currentId)
+                    val moved = when {
+                        entry is PageEntry -> dropOnto(entry.page, where)
+                        entry is Section && !entry.daily -> moveToRoot(moving)
+                        else -> false
                     }
-                    e.isDropCompleted = true
+                    e.isDropCompleted = moved
                 }
                 e.consume()
             }
             setOnDragDone { dragging = null }
         }
-
-        private fun lastTopKey(moving: Page): Double? =
-            alive.asSequence()
-                .filter { it.parentId == null && !it.isDaily() && it.id != moving.id }
-                .map { it.sortKey }
-                .maxOrNull()
 
         private fun dragOver(e: DragEvent) {
             val where = dropPosition(e)
@@ -306,6 +327,12 @@ internal class Sidebar(
     }
 
     companion object {
+        private fun lastTopKey(alive: List<Page>, moving: Page): Double? =
+            alive.asSequence()
+                .filter { it.parentId == null && !it.isDaily() && it.id != moving.id }
+                .map { it.sortKey }
+                .maxOrNull()
+
         private fun todayLabel(): String {
             val d = LocalDate.now()
             return d.monthValue.toString() + "月" + d.dayOfMonth + "日"

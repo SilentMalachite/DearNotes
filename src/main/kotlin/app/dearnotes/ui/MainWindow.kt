@@ -103,13 +103,15 @@ class MainWindow(private val stage: Stage, private val s: Services) : Sidebar.Ac
         stage.minHeight = 400.0
 
         s.saver.setListener { saveIndicator.show(it) }
+        Errors.setOwner(stage)
         stage.setOnCloseRequest { e ->
             if (!flushAll()) e.consume()
         }
     }
 
     fun flushTitle() {
-        editor.saveTitle()
+        // 終了処理（App.stop）から呼ばれるため、失敗してもモーダルを出さずログ記録のみ行う
+        editor.saveTitle(showErrors = false)
     }
 
     /**
@@ -206,14 +208,21 @@ class MainWindow(private val stage: Stage, private val s: Services) : Sidebar.Ac
     }
 
     override fun trash(p: Page) {
-        s.saver.flushAndWait(2, TimeUnit.SECONDS)
+        if (!editor.saveTitle()) return
+        if (!s.saver.flushAndWait(2, TimeUnit.SECONDS)) {
+            Errors.warn(
+                "ゴミ箱へ移動できませんでした",
+                "まだ保存できていない変更があります。少し待ってからもう一度試してください。",
+            )
+            return
+        }
         if (!Errors.run("ゴミ箱へ移動") { s.pages.trash(p.id, System.currentTimeMillis()) }) return
         val current = editor.page()
         sidebar.reload(current?.id)
         val currentGone = current != null && (
             Errors.get("ページを読む") { s.pages.get(current.id)?.isTrashed() ?: true } ?: true
             )
-        if (currentGone) openInitialPage()
+        if (currentGone) openInitialPage() else editor.refreshBacklinks()
     }
 
     override fun exportPage(p: Page) {
@@ -283,25 +292,39 @@ class MainWindow(private val stage: Stage, private val s: Services) : Sidebar.Ac
     }
 
     override fun showTrash() {
-        val dialog = trashDialog ?: TrashDialog(stage, s) {
-            val current = editor.page()
-            sidebar.reload(current?.id)
-            val gone = current == null || (
-                Errors.get("ページを読む") { s.pages.get(current.id)?.isTrashed() ?: true } ?: true
-                )
-            if (gone) openInitialPage()
-        }.also { trashDialog = it }
+        val dialog = trashDialog ?: TrashDialog(stage, s, ::onTrashChanged).also { trashDialog = it }
         dialog.show()
     }
 
+    /** ゴミ箱での復元・完全削除後にサイドバーと現在ページの被リンクを更新する。 */
+    internal fun onTrashChanged() {
+        val current = editor.page()
+        sidebar.reload(current?.id)
+        val gone = current == null || (
+            Errors.get("ページを読む") { s.pages.get(current.id)?.isTrashed() ?: true } ?: true
+            )
+        if (gone) openInitialPage() else editor.refreshBacklinks()
+    }
+
     override fun showSearch() {
+        // タイトルの遅延保存を先に確定させ、新しいタイトルも検索にヒットさせる
+        if (!editor.saveTitle()) return
         val dialog = searchDialog ?: SearchDialog(stage, s, ::openHit).also { searchDialog = it }
         dialog.show()
     }
 
+    internal fun searchDialog(): SearchDialog? = searchDialog
+
     private fun openHit(h: Hit) {
         val p = Errors.get("ページを開く") { s.pages.get(h.pageId) } ?: return
         open(p, h.blockId)
+    }
+
+    override fun pageMoved() {
+        val current = editor.page() ?: return
+        val fresh = Errors.get("ページを読む") { s.pages.get(current.id) } ?: current
+        editor.pageUpdated(fresh)
+        updateHeader(fresh)
     }
 
     override fun pageChanged(p: Page) {

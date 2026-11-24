@@ -29,12 +29,31 @@ internal class ImeArea : StyleClassedTextArea() {
 
     private var pendingCommitStart = 0
     private var pendingCommitLength = 0
+    /** IME イベントの反映が1回終わった直後に呼ぶ。 */
+    var onImeApplied: (() -> Unit)? = null
 
     init {
         // 親が機能の有無で付けないことがあるので、ここで必ず付け替える
         setOnInputMethodTextChanged(::handleInputMethodEvent)
         inputMethodRequests = requests
         ime.install(this)
+        // フォーカス喪失時に終了イベントが届かない場合でも、未確定状態が残って入力不能にならないようにする
+        focusedProperty().addListener { _, _, now ->
+            if (!now) {
+                val prevStart = imStart
+                val prevLength = imLength
+                imStart = 0
+                imLength = 0
+                pendingCommitStart = 0
+                pendingCommitLength = 0
+                ime.reset()
+                if (prevLength > 0) {
+                    val start = prevStart.coerceIn(0, length)
+                    val end = (prevStart + prevLength).coerceIn(start, length)
+                    mapStyle(start, end, ::withoutComposed)
+                }
+            }
+        }
     }
 
     fun isComposing(): Boolean = imLength > 0 || ime.isComposing()
@@ -58,6 +77,7 @@ internal class ImeArea : StyleClassedTextArea() {
         imLength = 0
         pendingCommitStart = 0
         pendingCommitLength = 0
+        ime.reset()
     }
 
     override fun handleInputMethodEvent(event: InputMethodEvent) {
@@ -105,6 +125,7 @@ internal class ImeArea : StyleClassedTextArea() {
         } finally {
             applying = false
         }
+        onImeApplied?.invoke()
     }
 
     private fun composedText(event: InputMethodEvent): String {

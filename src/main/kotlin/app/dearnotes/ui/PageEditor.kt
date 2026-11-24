@@ -54,6 +54,7 @@ internal class PageEditor(
 
     private val iconButton = Button()
     private val title = TextField()
+    private val titleIme = ImeGuard()
     private val blockBox = VBox()
     private val views = ArrayList<BlockView>()
     private val slash = SlashMenu(::applySlash)
@@ -82,7 +83,7 @@ internal class PageEditor(
         }
         renameLater.setOnFinished { saveTitle() }
         // 変換の確定に使った Enter では、本文へ移さない
-        ImeGuard().install(title)
+        titleIme.install(title)
         title.setOnKeyPressed { e ->
             if (e.code == KeyCode.ENTER || e.code == KeyCode.DOWN) {
                 saveTitle()
@@ -111,6 +112,16 @@ internal class PageEditor(
     fun views(): List<BlockView> = views.toList()
 
     fun backlinks(): Backlinks = backlinks
+
+    internal fun slashMenu(): SlashMenu = slash
+
+    internal fun pageLinkMenu(): PageLinkMenu = links
+
+    /** いま開いているページへの被リンク一覧を DB から読み直す。 */
+    fun refreshBacklinks() {
+        val current = page ?: return
+        backlinks.show(Errors.get("このページへのリンクを読む") { s.blocks.linksTo(current.id) } ?: emptyList())
+    }
 
     internal fun isLinkDismissed(v: BlockView, from: Int): Boolean = links.dismissed(v, from)
 
@@ -170,6 +181,7 @@ internal class PageEditor(
         val opened = page!!
         loadingTitle = true
         title.text = opened.title ?: ""
+        titleIme.reset()
         loadingTitle = false
         iconButton.text = opened.displayIcon()
 
@@ -446,7 +458,7 @@ internal class PageEditor(
         Platform.runLater {
             linkQueryPending.remove(v)
             val focused = v.scene != null && v.scene.focusOwner == v.area()
-            if (!isActive(v) || !focused || v.block().type == BlockType.CODE) {
+            if (!isActive(v) || !focused || v.isComposing() || v.block().type == BlockType.CODE) {
                 links.close(v)
                 return@runLater
             }
@@ -502,16 +514,20 @@ internal class PageEditor(
             if (tail.isNotEmpty()) v.area().deleteText(caret, v.text().length)
             from = 1
         }
+        // 折りたたみ済みブロックへの複数行ペーストは、隠し子行の後に入れて階層構造を分断しない
+        val vIdx = views.indexOf(v)
+        var insertAt = if (v.block().collapsed) Outline.end(blocks(), vIdx) else vIdx + 1
         for (i in from until lines.size) {
             val b = toBlock(Block.empty(current.id, BlockType.PARAGRAPH, 0.0), lines[i], baseIndent)
-            last = insertBlock(views.indexOf(last) + 1, b)
+            last = insertBlock(insertAt, b)
+            insertAt = views.indexOf(last) + 1
         }
         var end = last.text().length
         if (tail.isNotEmpty() && last.block().type == BlockType.DIVIDER) {
             // 区切り線の本文は見えないので、カーソルより後ろは下の新しい行に入れる
             val rest = Block.empty(current.id, BlockType.PARAGRAPH, 0.0).withIndent(baseIndent)
                 .withContent(tail, tailMarks)
-            last = insertBlock(views.indexOf(last) + 1, rest)
+            last = insertBlock(insertAt, rest)
             end = 0
         } else if (tail.isNotEmpty()) {
             val marks = if (last.block().type == BlockType.CODE) {
@@ -874,13 +890,24 @@ internal class PageEditor(
     }
 
     /** 名前の変更を書く。書けなかったら false（変えていなければ true）。 */
-    fun saveTitle(): Boolean {
+    fun saveTitle(): Boolean = saveTitle(showErrors = true)
+
+    internal fun saveTitle(showErrors: Boolean): Boolean {
         renameLater.stop()
         val current = page ?: return true
         if (title.text == current.title) return true
         val t = title.text
-        if (!Errors.run("名前を変更") { s.pages.rename(current.id, t) }) return false
-        val updated = Errors.get("ページを読む") { s.pages.get(current.id) }
+        val saved = if (showErrors) {
+            Errors.run("名前を変更") { s.pages.rename(current.id, t) }
+        } else {
+            Errors.runQuietly("名前を変更") { s.pages.rename(current.id, t) }
+        }
+        if (!saved) return false
+        val updated = if (showErrors) {
+            Errors.get("ページを読む") { s.pages.get(current.id) }
+        } else {
+            Errors.getQuietly("ページを読む") { s.pages.get(current.id) }
+        }
         if (updated != null) {
             page = updated
             nav.pageChanged(updated)

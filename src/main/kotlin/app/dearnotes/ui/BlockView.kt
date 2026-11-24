@@ -18,7 +18,6 @@ import javafx.scene.control.Label
 import javafx.scene.control.Separator
 import javafx.scene.input.Clipboard
 import javafx.scene.input.DataFormat
-import javafx.scene.input.InputMethodEvent
 import javafx.scene.input.KeyCode
 import javafx.scene.input.KeyEvent
 import javafx.scene.input.MouseEvent
@@ -157,25 +156,18 @@ internal class BlockView(
                 }
             }
         }
-        // ←→ やクリックでカーソルが「[[」から離れたら、ページの候補を閉じる
+        // ←→ やクリックでカーソルが「[[」から離れたら、ページの候補を閉じる（変換中は誤発火を防ぐ）
         area.caretPositionProperty().addListener(ChangeListener { _, _, _ ->
-            if (!loading && !disposed) host.linkQuery(this)
+            if (!loading && !disposed && !area.isComposing() && !area.isApplyingIme()) host.linkQuery(this)
         })
         area.focusedProperty().addListener(ChangeListener { _, _, now ->
             if (disposed) return@ChangeListener
             updatePlaceholder()
             if (now == true) host.focused(this) else host.blurred(this)
         })
-        // 確定（部分確定を含む）のあと、変換中に触れなかったリンクの印と行頭の記号を調べる
-        area.addEventFilter(InputMethodEvent.INPUT_METHOD_TEXT_CHANGED) { e ->
-            if (disposed) return@addEventFilter
-            val hasComposed = e.composed != null && e.composed.isNotEmpty()
-            val hasCommitted = !e.committed.isNullOrEmpty()
-            if (hasComposed && !hasCommitted) return@addEventFilter
-            Platform.runLater {
-                if (disposed) return@runLater
-                finishImeCommit()
-            }
+        // 確定（部分確定を含む）のあと、変換中に触れなかったリンクの印・保存・行頭の記号を反映する
+        area.onImeApplied = {
+            if (!disposed) finishImeCommit()
         }
         area.addEventFilter(KeyEvent.KEY_PRESSED, ::onKeyPressed)
         area.addEventFilter(ScrollEvent.SCROLL) { e ->
@@ -190,10 +182,14 @@ internal class BlockView(
 
     fun isDisposed(): Boolean = disposed
 
+    fun isComposing(): Boolean = area.isComposing()
+
     /** ページ切替やブロック削除のときに呼び、購読と RichTextFX の資源を解放する。 */
     fun dispose() {
         if (disposed) return
         disposed = true
+        area.onImeApplied = null
+        area.noteDocumentReplaced()
         richSub.unsubscribe()
         textSub.unsubscribe()
         area.dispose()
@@ -350,14 +346,18 @@ internal class BlockView(
     }
 
     private fun onEdited() {
-        if (disposed) return
+        // 変換中の未確定文字では自動保存や候補メニューを発火させない
+        if (disposed || area.isComposing() || area.isApplyingIme()) return
         val text = area.text
         val marks = if (block.type == BlockType.CODE) emptyList() else StyledText.read(area)
         if (text == block.text && marks == block.marks) return
         block = block.withContent(text, marks)
         host.edited(this)
-        // コードの中の「/」はただの文字。候補は出さず、出ていれば閉じる
-        host.slashQuery(this, if (block.type == BlockType.CODE) null else SlashCommands.queryOf(text))
+        // コードの中の「/」はただの文字。フォーカス外でも候補は出さず、出ていれば閉じる
+        host.slashQuery(
+            this,
+            if (block.type == BlockType.CODE || !area.isFocused) null else SlashCommands.queryOf(text),
+        )
         host.linkQuery(this)
     }
 
@@ -388,12 +388,18 @@ internal class BlockView(
         area.setStyleSpans(at, area.getStyleSpans(at, end).mapStyles { StyledText.withoutPage(it) })
     }
 
-    /** 変換が終わった文字について、リンクの印と行頭の記号を調べる。 */
+    /** 変換が終わった文字について、リンクの印・保存・行頭の記号を反映する。 */
     private fun finishImeCommit() {
         if (disposed) return
         val committed = area.consumeCommit()
         if (committed != null) unlink(committed.start, committed.length)
-        if (!area.isComposing()) detectShortcut()
+        if (!area.isComposing()) {
+            onEdited()
+            // 確定直後の Enter を ImeGuard が消費するより前に load() で reset しないよう次パルスで調べる
+            Platform.runLater {
+                if (!disposed) detectShortcut()
+            }
+        }
     }
 
     /** 行頭に「# 」などを打ったら、その種類に変える。 */
@@ -468,13 +474,14 @@ internal class BlockView(
         when (e.code) {
             KeyCode.ENTER -> {
                 if (e.isShiftDown) {
-                    area.replaceSelection("\n")
-                } else if (block.type == BlockType.CODE && !(caret == length && area.text.endsWith("\n"))) {
+                    // 区切り線には不可視改行を入れない（Backspace で消せなくなるため）
+                    if (block.type != BlockType.DIVIDER) area.replaceSelection("\n")
+                } else if (block.type == BlockType.CODE && !(noSelection && caret == length && area.text.endsWith("\n"))) {
                     area.replaceSelection("\n")
                 } else {
                     if (block.type == BlockType.CODE) area.deleteText(length - 1, length)
                     // 選んだ文字があれば、消してから分ける
-                    if (!noSelection) area.replaceSelection("")
+                    if (!noSelection && block.type != BlockType.DIVIDER) area.replaceSelection("")
                     host.enter(this)
                 }
                 e.consume()

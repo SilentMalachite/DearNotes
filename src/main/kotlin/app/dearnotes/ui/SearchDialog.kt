@@ -4,6 +4,7 @@ import app.dearnotes.isJavaBlank
 
 import app.dearnotes.db.SearchRepo.Hit
 import java.util.concurrent.TimeUnit
+import javafx.animation.Animation
 import javafx.animation.PauseTransition
 import javafx.beans.value.ChangeListener
 import javafx.geometry.Insets
@@ -13,6 +14,7 @@ import javafx.scene.control.ListCell
 import javafx.scene.control.ListView
 import javafx.scene.control.TextField
 import javafx.scene.input.KeyCode
+import javafx.scene.input.MouseButton
 import javafx.scene.layout.VBox
 import javafx.stage.Modality
 import javafx.stage.Stage
@@ -44,12 +46,27 @@ internal class SearchDialog(
         // 変換中の ↑↓・Enter・Esc や確定・取消直後の Enter・Esc で検索操作が誤動作しないようにする
         ImeGuard().install(field)
         field.textProperty().addListener(ChangeListener { _, _, _ -> debounce.playFromStart() })
-        debounce.setOnFinished { runSearch() }
+        debounce.setOnFinished { if (stage.isShowing) runSearch() }
 
         results.styleClass.add("search-results")
         results.placeholder = empty
         results.setCellFactory {
             object : ListCell<Hit>() {
+                init {
+                    // スクロールバーや空白領域のクリックで誤確定しないよう、非空セルの左クリックのみ確定する
+                    setOnMouseClicked { e ->
+                        val hit = item
+                        if (e.button != MouseButton.PRIMARY || isEmpty || hit == null) return@setOnMouseClicked
+                        // 語句を変えた直後の古い結果は開かず、探し直すだけにする
+                        if (field.text != searchedQuery) {
+                            debounce.stop()
+                            runSearch()
+                        } else if (e.clickCount >= 1) {
+                            openHit(hit)
+                        }
+                    }
+                }
+
                 override fun updateItem(h: Hit?, isEmpty: Boolean) {
                     super.updateItem(h, isEmpty)
                     if (isEmpty || h == null) {
@@ -65,15 +82,6 @@ internal class SearchDialog(
                     snip.styleClass.add("hit-snippet")
                     graphic = VBox(2.0, t, snip)
                 }
-            }
-        }
-        results.setOnMouseClicked { e ->
-            // 語句を変えた直後の古い結果は開かず、探し直すだけにする
-            if (field.text != searchedQuery) {
-                debounce.stop()
-                runSearch()
-            } else if (e.clickCount >= 1) {
-                openSelected()
             }
         }
 
@@ -114,6 +122,8 @@ internal class SearchDialog(
             if (e.code == KeyCode.ESCAPE) stage.hide()
         }
         stage.scene = scene
+        // ダイアログ閉鎖時に遅延検索タイマーが残らないよう止める
+        stage.setOnHidden { debounce.stop() }
         stage.focusedProperty().addListener(ChangeListener { _, _, now ->
             if (now != true) stage.hide()
         })
@@ -124,6 +134,12 @@ internal class SearchDialog(
     fun results(): ListView<Hit> = results
 
     fun isShowing(): Boolean = stage.isShowing
+
+    internal fun isDebounceRunning(): Boolean = debounce.status == Animation.Status.RUNNING
+
+    internal fun hide() {
+        stage.hide()
+    }
 
     fun show() {
         // 書きかけの変更も探せるように、先に書いておく
@@ -153,6 +169,10 @@ internal class SearchDialog(
 
     private fun openSelected() {
         val h = results.selectionModel.selectedItem ?: return
+        openHit(h)
+    }
+
+    private fun openHit(h: Hit) {
         stage.hide()
         onOpen(h)
     }

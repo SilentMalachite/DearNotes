@@ -16,6 +16,7 @@ import java.util.concurrent.TimeUnit
 import javafx.application.Platform
 import javafx.scene.Node
 import javafx.scene.control.Label
+import javafx.scene.control.ListCell
 import javafx.scene.control.TextField
 import javafx.scene.input.Clipboard
 import javafx.scene.input.ClipboardContent
@@ -111,6 +112,7 @@ class PageEditorUiTest {
     @AfterEach
     fun close() {
         fx {
+            Errors.dismiss()
             stage.close()
             null
         }
@@ -1417,7 +1419,545 @@ class PageEditorUiTest {
         assertEquals(listOf("元の本文"), blocks.listByPage(other.id).map { it.text })
     }
 
+    @Test
+    fun imeStateResetsOnDocumentReplaceAndFocusLoss() {
+        focusFirstBlock()
+        fx {
+            val v = current()
+            val area = v.area() as ImeArea
+            fireIme(area, "あ", "")
+            assertTrue(area.isComposing())
+            assertTrue(area.claimsKey(KeyEvent(KeyEvent.KEY_PRESSED, "", "", KeyCode.ENTER, false, false, false, false)))
+            // 本文入替で ImeGuard の変換状態が解除される
+            v.setContent("入替", emptyList())
+            assertFalse(area.isComposing())
+            assertFalse(area.claimsKey(KeyEvent(KeyEvent.KEY_PRESSED, "", "", KeyCode.ENTER, false, false, false, false)))
+            null
+        }
+        settle()
+        focusEndOf(0)
+        type("X")
+        assertEquals("入替X", fx { current().block().text })
+
+        // 変換中にフォーカス喪失しても入力不能にならず下線も外れる
+        fx {
+            val area = current().area() as ImeArea
+            fireIme(area, "い", "")
+            assertTrue(area.isComposing())
+            val title = stage.scene.lookup(".page-title") as TextField
+            title.requestFocus()
+            assertFalse(area.isComposing())
+            assertFalse(area.claimsKey(KeyEvent(KeyEvent.KEY_PRESSED, "", "", KeyCode.ENTER, false, false, false, false)))
+            for (i in 0 until area.length) {
+                assertFalse(area.getStyleOfChar(i).contains(ImeArea.COMPOSED))
+            }
+            null
+        }
+        settle()
+        focusEndOf(0)
+        type("Y")
+        assertTrue(fx { current().block().text }.endsWith("Y"))
+    }
+
+    @Test
+    fun imeCompositionSuppressesAutoSaveAndMenusUntilCommit() {
+        pages.create(null, "京都")
+        focusFirstBlock()
+        assertTrue(saver.flushAndWait(2L, TimeUnit.SECONDS))
+        assertFalse(saver.hasPending())
+
+        // 変換中の未確定文字では自動保存もスラッシュメニューも発火しない
+        fx {
+            val area = current().area()
+            fireIme(area, "/見", "")
+            assertFalse(saver.hasPending())
+            assertFalse(window.editor().slashMenu().isShowing())
+            assertEquals("", current().block().text)
+            null
+        }
+        settle()
+        assertFalse(saver.hasPending())
+        assertFalse(fx { window.editor().slashMenu().isShowing() })
+
+        // 確定後にブロック本文・自動保存・スラッシュメニューへ反映される
+        fx {
+            fireIme(current().area(), "", "/見")
+            null
+        }
+        settle()
+        assertEquals("/見", fx { current().block().text })
+        assertTrue(fx { window.editor().slashMenu().isShowing() })
+        assertTrue(saver.flushAndWait(2L, TimeUnit.SECONDS))
+        val pageId = fx { window.editor().page()!!.id }
+        assertEquals(listOf("/見"), blocks.listByPage(pageId).map { it.text })
+
+        // 変換キャンセル時は自動保存が走らない
+        fx {
+            current().setContent("", emptyList())
+            window.editor().slashMenu().hide()
+            null
+        }
+        assertTrue(saver.flushAndWait(2L, TimeUnit.SECONDS))
+        fx {
+            val area = current().area()
+            fireIme(area, "[[京", "")
+            assertFalse(saver.hasPending())
+            assertFalse(window.editor().pageLinkMenu().isShowing())
+            null
+        }
+        settle()
+        assertFalse(saver.hasPending())
+        assertFalse(fx { window.editor().pageLinkMenu().isShowing() })
+
+        // 変換確定後にページリンク候補が出る
+        fx {
+            fireIme(current().area(), "", "[[京")
+            null
+        }
+        settle()
+        assertEquals("[[京", fx { current().block().text })
+        assertTrue(fx { window.editor().pageLinkMenu().isShowing() })
+        assertTrue(saver.flushAndWait(2L, TimeUnit.SECONDS))
+        assertEquals(listOf("[[京"), blocks.listByPage(pageId).map { it.text })
+
+        // 変換取消（空確定）では不要な保存を起こさない
+        fx {
+            val area = current().area()
+            fireIme(area, "あ", "")
+            fireIme(area, "", "")
+            null
+        }
+        settle()
+        assertFalse(saver.hasPending())
+    }
+
+    @Test
+    fun sidebarDragDropUpdatesBreadcrumbAndEditorPage() {
+        val parent = pages.create(null, "親")
+        val child = pages.create(null, "子")
+        fx {
+            window.sidebar().reload(child.id)
+            window.open(child)
+            null
+        }
+        settle()
+        assertNull(fx { window.editor().page()!!.parentId })
+        assertEquals("📝 子", fx { (stage.scene.lookup(".breadcrumb") as Label).text })
+
+        val movedInto = fx { window.sidebar().moveOnto(child, parent, Sidebar.Drop.INTO) }
+        assertTrue(movedInto)
+        assertEquals(parent.id, fx { window.editor().page()!!.parentId })
+        assertEquals("📝 親  /  📝 子", fx { (stage.scene.lookup(".breadcrumb") as Label).text })
+
+        val freshChild = pages.get(child.id)!!
+        val movedRoot = fx { window.sidebar().moveToRoot(freshChild) }
+        assertTrue(movedRoot)
+        assertNull(fx { window.editor().page()!!.parentId })
+        assertEquals("📝 子", fx { (stage.scene.lookup(".breadcrumb") as Label).text })
+    }
+
+    @Test
+    fun sidebarRespaceFailureAndSectionDropExhaustionDoNotFallbackToGap() {
+        val a = pages.create(null, "A")
+        val b = pages.create(null, "B")
+        val c = pages.create(null, "C")
+        // A と B の sort_key を同一にして SortKeys.between が null になる状況を作る
+        db.write { conn ->
+            conn.prepareStatement("UPDATE pages SET sort_key = 500.0 WHERE id IN (?, ?)").use { ps ->
+                ps.setString(1, a.id)
+                ps.setString(2, b.id)
+                ps.executeUpdate()
+            }
+            conn.createStatement().use { st ->
+                st.executeUpdate(
+                    "CREATE TRIGGER fail_respace BEFORE UPDATE OF sort_key ON pages " +
+                        "BEGIN SELECT RAISE(ABORT, 'respace failed'); END",
+                )
+            }
+        }
+        fx {
+            window.sidebar().reload(c.id)
+            null
+        }
+        val originalCKey = pages.get(c.id)!!.sortKey
+        val moved = fx { window.sidebar().moveOnto(pages.get(c.id)!!, pages.get(b.id)!!, Sidebar.Drop.BEFORE) }
+        assertFalse(moved)
+        assertEquals(originalCKey, pages.get(c.id)!!.sortKey)
+
+        // セクションドロップで末尾キーの精度が尽きているときは respaceChildren(null) で振り直して末尾へ置く
+        db.write { conn ->
+            conn.createStatement().use { st ->
+                st.executeUpdate("DROP TRIGGER fail_respace")
+            }
+            conn.prepareStatement("UPDATE pages SET sort_key = 1e20 WHERE id = ?").use { ps ->
+                ps.setString(1, a.id)
+                ps.executeUpdate()
+            }
+        }
+        val nested = pages.create(a.id, "子")
+        fx {
+            window.sidebar().reload(nested.id)
+            null
+        }
+        val movedToRoot = fx { window.sidebar().moveToRoot(pages.get(nested.id)!!) }
+        assertTrue(movedToRoot)
+        val afterA = pages.get(a.id)!!
+        val afterNested = pages.get(nested.id)!!
+        assertNull(afterNested.parentId)
+        assertTrue(afterNested.sortKey > afterA.sortKey, "末尾へ配置されること: ${afterNested.sortKey} > ${afterA.sortKey}")
+    }
+
+    @Test
+    fun trashRestoreAndDeleteRefreshBacklinksAndAbortOnSaveFailure() {
+        val target = pages.create(null, "標的")
+        val linker = pages.create(null, "参照元")
+        val other = pages.create(null, "別ページ")
+        blocks.save(
+            listOf(
+                Block.empty(linker.id, BlockType.PARAGRAPH, 1024.0)
+                    .withContent("標的への参照", listOf(Mark(0, 2, Mark.Style.PAGE, target.id))),
+            ),
+            emptyList(),
+        )
+        reopen(target.id)
+        assertEquals(listOf("📝 参照元"), fx { window.editor().backlinks().titles() })
+        assertTrue(fx { window.editor().backlinks().isVisible })
+
+        // ブロック保存失敗時はゴミ箱移動を中断する
+        focusFirstBlock()
+        failSaves = true
+        type("未保存本文")
+        fx {
+            window.trash(other)
+            null
+        }
+        settle()
+        assertFalse(pages.get(other.id)!!.isTrashed())
+        failSaves = false
+        assertTrue(saver.flushAndWait(2L, TimeUnit.SECONDS))
+
+        // タイトル保存失敗時もゴミ箱移動を中断する
+        db.write { conn ->
+            conn.createStatement().use { st ->
+                st.executeUpdate(
+                    "CREATE TRIGGER fail_trash_title BEFORE UPDATE OF title ON pages " +
+                        "BEGIN SELECT RAISE(ABORT, 'title locked'); END",
+                )
+            }
+        }
+        fx {
+            Errors.dismiss()
+            (stage.scene.lookup(".page-title") as TextField).text = "未保存名"
+            window.trash(other)
+            null
+        }
+        settle()
+        assertFalse(pages.get(other.id)!!.isTrashed())
+        db.write { conn ->
+            conn.createStatement().use { st ->
+                st.executeUpdate("DROP TRIGGER fail_trash_title")
+            }
+        }
+        fx {
+            Errors.dismiss()
+            (stage.scene.lookup(".page-title") as TextField).text = "標的"
+            window.editor().saveTitle()
+            null
+        }
+
+        // 参照元ページをゴミ箱へ移すと開いているページの被リンクが消える
+        fx {
+            window.trash(linker)
+            null
+        }
+        settle()
+        assertEquals(emptyList<String>(), fx { window.editor().backlinks().titles() })
+        assertFalse(fx { window.editor().backlinks().isVisible })
+
+        // ゴミ箱から復元すると被リンクが復活する
+        pages.restore(linker.id)
+        fx {
+            window.onTrashChanged()
+            null
+        }
+        settle()
+        assertEquals(listOf("📝 参照元"), fx { window.editor().backlinks().titles() })
+        assertTrue(fx { window.editor().backlinks().isVisible })
+
+        // 完全削除でも被リンクが更新される
+        pages.deleteForever(linker.id)
+        fx {
+            window.onTrashChanged()
+            null
+        }
+        settle()
+        assertEquals(emptyList<String>(), fx { window.editor().backlinks().titles() })
+        assertFalse(fx { window.editor().backlinks().isVisible })
+    }
+
+    @Test
+    fun codeBlockEnterWithSelectionIncludingTrailingNewlineReplacesSelection() {
+        focusFirstBlock()
+        type("```")
+        fx {
+            val area = current().area()
+            area.replaceText("abc\n")
+            area.selectRange(0, 4)
+            null
+        }
+        settle()
+        press(KeyCode.ENTER)
+        // 末尾改行を含む選択あり Enter は脱出せず選択範囲を改行に置き換える
+        assertEquals(listOf("code:0:\n"), summary())
+
+        // 選択なしで末尾改行の後ろで Enter すると通常どおりコードブロックから抜ける
+        fx {
+            val area = current().area()
+            area.replaceText("abc\n")
+            area.moveTo(4)
+            null
+        }
+        settle()
+        press(KeyCode.ENTER)
+        assertEquals(listOf("code:0:abc", "paragraph:0:"), summary())
+    }
+
+    @Test
+    fun shiftEnterOnDividerDoesNotInsertNewlineAndBackspaceStillDeletes() {
+        focusFirstBlock()
+        type("---")
+        type("after")
+        fx {
+            window.editor().views().first().focusAt(0)
+            null
+        }
+        settle()
+        press(KeyCode.ENTER, KeyMod.SHIFT)
+        assertEquals("", fx { window.editor().views().first().text() })
+        press(KeyCode.BACK_SPACE)
+        assertEquals(listOf("paragraph:0:after"), summary())
+    }
+
+    @Test
+    fun menuAndSearchListClicksConfirmOnlyOnPrimaryClickOfNonEmptyCell() {
+        val tokyo = pages.create(null, "東京メモ")
+        val opened = mutableListOf<String>()
+        val dialog = fx { SearchDialog(stage, services) { h -> opened.add(h.pageId) } }
+        fx {
+            dialog.field().text = "東京"
+            dialog.show()
+            dialog.results().applyCss()
+            dialog.results().layout()
+            null
+        }
+        settle()
+        // ListView 全体（空白やスクロールバー相当）や右クリックでは開かない
+        fx {
+            dialog.results().fireEvent(clickEvent(MouseButton.PRIMARY))
+            val nonEmptyCell = firstNonEmptyCell(dialog.results())
+            assertNotNull(nonEmptyCell)
+            nonEmptyCell!!.fireEvent(clickEvent(MouseButton.SECONDARY))
+            val emptyCell = firstEmptyCell(dialog.results())
+            emptyCell?.fireEvent(clickEvent(MouseButton.PRIMARY))
+            null
+        }
+        settle()
+        assertTrue(opened.isEmpty())
+        assertTrue(fx { dialog.isShowing() })
+
+        // 語句変更直後のセル左クリックは古い結果を開かず再検索する
+        fx {
+            dialog.field().text = "存在しない語句"
+            val nonEmptyCell = firstNonEmptyCell(dialog.results())!!
+            nonEmptyCell.fireEvent(clickEvent(MouseButton.PRIMARY))
+            null
+        }
+        settle()
+        assertTrue(opened.isEmpty())
+        assertTrue(fx { dialog.results().items.isEmpty() })
+
+        // 閉鎖時にデバウンスタイマーが停止される
+        fx {
+            dialog.field().text = "東京"
+            assertTrue(dialog.isDebounceRunning())
+            dialog.hide()
+            assertFalse(dialog.isDebounceRunning())
+            null
+        }
+
+        // 正しい語句で表示した非空セルの左クリックで確定する
+        fx {
+            dialog.show()
+            dialog.results().applyCss()
+            dialog.results().layout()
+            val nonEmptyCell = firstNonEmptyCell(dialog.results())!!
+            nonEmptyCell.fireEvent(clickEvent(MouseButton.PRIMARY))
+            null
+        }
+        settle()
+        assertEquals(listOf(tokyo.id), opened)
+
+        // showSearch() 前にタイトル保存が実行され、直前のタイトル変更が検索に出る
+        fx {
+            val title = stage.scene.lookup(".page-title") as TextField
+            title.text = "検索対象タイトル"
+            window.showSearch()
+            val d = window.searchDialog()!!
+            d.field().text = "検索対象タイトル"
+            d.show()
+            assertTrue(d.results().items.any { it.pageTitle == "検索対象タイトル" })
+            d.hide()
+            null
+        }
+
+        // SlashMenu: ListView 全体や右クリックでは確定せず、非空セル左クリックで確定
+        focusFirstBlock()
+        type("/見")
+        assertTrue(fx { window.editor().slashMenu().isShowing() })
+        fx {
+            val list = window.editor().slashMenu().list()
+            list.applyCss()
+            list.layout()
+            list.fireEvent(clickEvent(MouseButton.PRIMARY))
+            firstNonEmptyCell(list)!!.fireEvent(clickEvent(MouseButton.SECONDARY))
+            null
+        }
+        settle()
+        assertTrue(fx { window.editor().slashMenu().isShowing() })
+        fx {
+            val list = window.editor().slashMenu().list()
+            firstNonEmptyCell(list)!!.fireEvent(clickEvent(MouseButton.PRIMARY))
+            null
+        }
+        settle()
+        assertFalse(fx { window.editor().slashMenu().isShowing() })
+        assertEquals(BlockType.H1, fx { current().block().type })
+
+        // PageLinkMenu: ListView 全体や右クリックでは確定せず、非空セル左クリックで確定
+        fx {
+            current().setBlock(current().block().withType(BlockType.PARAGRAPH).withContent("", emptyList()))
+            current().focusAt(0)
+            null
+        }
+        settle()
+        type("[[東京")
+        assertTrue(fx { window.editor().pageLinkMenu().isShowing() })
+        fx {
+            val list = window.editor().pageLinkMenu().list()
+            list.applyCss()
+            list.layout()
+            list.fireEvent(clickEvent(MouseButton.PRIMARY))
+            firstNonEmptyCell(list)!!.fireEvent(clickEvent(MouseButton.SECONDARY))
+            null
+        }
+        settle()
+        assertTrue(fx { window.editor().pageLinkMenu().isShowing() })
+        fx {
+            val list = window.editor().pageLinkMenu().list()
+            firstNonEmptyCell(list)!!.fireEvent(clickEvent(MouseButton.PRIMARY))
+            null
+        }
+        settle()
+        assertFalse(fx { window.editor().pageLinkMenu().isShowing() })
+        assertEquals("東京メモ", fx { current().block().text })
+    }
+
+    @Test
+    fun pastingMultipleLinesIntoCollapsedBlockPlacesThemAfterHiddenChildren() {
+        openRows(
+            row(BlockType.BULLET, 0, "親", true),
+            row(BlockType.BULLET, 1, "子1", false),
+            row(BlockType.BULLET, 1, "子2", false),
+            row(BlockType.BULLET, 0, "次", false),
+        )
+        focusEndOf(0)
+        fx {
+            window.editor().pasteLines(current(), "A\nB\nC")
+            null
+        }
+        settle()
+        assertEquals(
+            listOf(
+                "bullet:0:親A",
+                "bullet:1:子1",
+                "bullet:1:子2",
+                "paragraph:0:B",
+                "paragraph:0:C",
+                "bullet:0:次",
+            ),
+            summary(),
+        )
+        assertTrue(fx { window.editor().views().first().block().collapsed })
+        assertEquals(listOf("bullet:0:親A", "paragraph:0:B", "paragraph:0:C", "bullet:0:次"), visibleSummary())
+
+        // 畳んだ見出しへの複数行ペーストも隠し子行の後に入る
+        openRows(
+            row(BlockType.H2, 0, "1日目", true),
+            row(BlockType.PARAGRAPH, 0, "伏見稲荷", false),
+            row(BlockType.H2, 0, "2日目", false),
+        )
+        focusEndOf(0)
+        fx {
+            window.editor().pasteLines(current(), "A\n## 途中")
+            null
+        }
+        settle()
+        assertEquals(
+            listOf("h2:0:1日目A", "paragraph:0:伏見稲荷", "h2:0:途中", "h2:0:2日目"),
+            summary(),
+        )
+        assertTrue(fx { window.editor().views().first().block().collapsed })
+        assertEquals(listOf("h2:0:1日目A", "h2:0:途中", "h2:0:2日目"), visibleSummary())
+    }
+
+    @Test
+    fun errorsAlertSetsOwnerSuppressesDuplicatesAndSkipsWhenNoWindowShowing() {
+        fx {
+            Errors.dismiss()
+            Errors.warn("警告1", "内容1")
+            val first = Errors.activeAlert()
+            assertNotNull(first)
+            assertSame(stage, first!!.owner)
+            assertEquals("警告1", first.headerText)
+
+            // 同時重複表示を抑止する
+            Errors.show("失敗2", SQLException("boom"))
+            assertSame(first, Errors.activeAlert())
+            assertEquals("警告1", Errors.activeAlert()!!.headerText)
+
+            // 閉じたあとは次のアラートを表示できる
+            first.close()
+            assertNull(Errors.activeAlert())
+            Errors.show("失敗2", SQLException("boom"))
+            val second = Errors.activeAlert()
+            assertNotNull(second)
+            assertSame(stage, second!!.owner)
+            assertEquals("失敗2できませんでした", second.headerText)
+
+            // オーナーウィンドウを閉じるとアラートも閉じ、表示中ウィンドウなしでは新規表示しない
+            stage.close()
+            assertNull(Errors.activeAlert())
+            Errors.warn("終了後", "表示されない")
+            assertNull(Errors.activeAlert())
+            null
+        }
+    }
+
     // ---- helpers ----
+
+    private fun clickEvent(button: MouseButton): MouseEvent = MouseEvent(
+        MouseEvent.MOUSE_CLICKED, 0.0, 0.0, 0.0, 0.0,
+        button, 1,
+        false, false, false, false,
+        button == MouseButton.PRIMARY, false, button == MouseButton.SECONDARY,
+        false, false, false, null,
+    )
+
+    private fun firstNonEmptyCell(list: javafx.scene.control.ListView<*>): ListCell<*>? =
+        list.lookupAll(".list-cell").filterIsInstance<ListCell<*>>().firstOrNull { !it.isEmpty && it.item != null }
+
+    private fun firstEmptyCell(list: javafx.scene.control.ListView<*>): ListCell<*>? =
+        list.lookupAll(".list-cell").filterIsInstance<ListCell<*>>().firstOrNull { it.isEmpty }
 
     private enum class KeyMod { SHIFT, SHORTCUT }
 

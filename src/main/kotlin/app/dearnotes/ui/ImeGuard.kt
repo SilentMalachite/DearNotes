@@ -31,6 +31,16 @@ internal class ImeGuard {
         node.addEventFilter(KeyEvent.KEY_TYPED) { e ->
             if (composing || (justEnded && isNewline(e.character))) e.consume()
         }
+        // フォーカス喪失時に変換終了イベントが届かないことがあるため状態を初期化する
+        node.focusedProperty().addListener { _, _, now ->
+            if (!now) reset()
+        }
+    }
+
+    /** 変換状態を初期化する（フォーカス喪失や本文入替で終了イベントを取りこぼしたとき用）。 */
+    fun reset() {
+        composing = false
+        justEnded = false
     }
 
     fun isComposing(): Boolean = composing
