@@ -81,6 +81,10 @@ val toolchainHome: Provider<String> = javaToolchains
     .launcherFor { languageVersion = JavaLanguageVersion.of(25) }
     .map { it.metadata.installationPath.asFile.absolutePath }
 
+val toolchainVersion: Provider<String> = javaToolchains
+    .launcherFor { languageVersion = JavaLanguageVersion.of(25) }
+    .map { "${it.metadata.vendor}:${it.metadata.jvmVersion}" }
+
 fun jdkTool(name: String): String {
     val exe = if (os.isWindows) "$name.exe" else name
     return "${toolchainHome.get()}/bin/$exe"
@@ -97,18 +101,26 @@ val copyLibs = tasks.register<Sync>("copyLibs") {
     into(packageInput)
 }
 
+val jlinkModules = listOf(
+    "java.base", "java.sql", "java.desktop", "java.logging", "java.xml",
+    "java.naming", "jdk.unsupported", "jdk.charsets", "jdk.localedata",
+)
+val jlinkLocales = "en,ja"
+
 val jlinkRuntime = tasks.register<Exec>("jlinkRuntime") {
     group = "distribution"
     val out = runtimeDir.get().asFile
+    // モジュール構成・ロケール・JDK の変更時に古い runtime を UP-TO-DATE と誤判定しないよう入力を宣言する
+    inputs.property("modules", jlinkModules)
+    inputs.property("locales", jlinkLocales)
+    inputs.property("toolchainHome", toolchainHome)
+    inputs.property("toolchainVersion", toolchainVersion)
     outputs.dir(out)
     doFirst { delete(out) }
     commandLine(
         jdkTool("jlink"),
-        "--add-modules", listOf(
-            "java.base", "java.sql", "java.desktop", "java.logging", "java.xml",
-            "java.naming", "jdk.unsupported", "jdk.charsets", "jdk.localedata",
-        ).joinToString(","),
-        "--include-locales", "en,ja",
+        "--add-modules", jlinkModules.joinToString(","),
+        "--include-locales", jlinkLocales,
         "--strip-debug", "--no-header-files", "--no-man-pages",
         "--output", out.absolutePath,
     )

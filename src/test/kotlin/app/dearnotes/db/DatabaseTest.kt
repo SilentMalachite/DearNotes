@@ -16,6 +16,7 @@ internal class DatabaseTest : DbTestBase() {
     fun opensInWalModeWithForeignKeys() {
         assertEquals("wal", db.read { c -> pragma(c, "journal_mode") })
         assertEquals("1", db.read { c -> pragma(c, "foreign_keys") })
+        assertEquals("5000", db.read { c -> pragma(c, "busy_timeout") })
         assertEquals(Migrations.latestVersion().toString(), db.read { c -> pragma(c, "user_version") })
     }
 
@@ -77,6 +78,37 @@ internal class DatabaseTest : DbTestBase() {
             BlockRepo(upgraded).save(listOf(b.withCollapsed(true)), emptyList())
             assertTrue(BlockRepo(upgraded).listByPage("p").first().collapsed)
             assertEquals(1, SearchRepo(upgraded).search("伏見稲荷").size)
+        }
+    }
+
+    @Test
+    fun migrationsRejectInvalidCurrentAndTargetVersions() {
+        val file = dir.resolve("invalid-version.db")
+        DriverManager.getConnection("jdbc:sqlite:" + file.toAbsolutePath()).use { c ->
+            c.createStatement().use { s -> s.execute("PRAGMA user_version = -1") }
+            assertThrows(SQLException::class.java) { Migrations.apply(c) }
+
+            c.createStatement().use { s -> s.execute("PRAGMA user_version = 0") }
+            assertThrows(IllegalArgumentException::class.java) { Migrations.apply(c, -1) }
+            assertThrows(IllegalArgumentException::class.java) {
+                Migrations.apply(c, Migrations.latestVersion() + 1)
+            }
+        }
+    }
+
+    @Test
+    fun openFailsCleanlyOnNewerDatabaseVersionWithoutLeakingConnection() {
+        val file = dir.resolve("future.db")
+        DriverManager.getConnection("jdbc:sqlite:" + file.toAbsolutePath()).use { c ->
+            c.createStatement().use { s -> s.execute("PRAGMA user_version = 999") }
+        }
+        assertThrows(SQLException::class.java) { Database.open(file) }
+        // 接続リークがなければ user_version を戻してすぐ開き直せる
+        DriverManager.getConnection("jdbc:sqlite:" + file.toAbsolutePath()).use { c ->
+            c.createStatement().use { s -> s.execute("PRAGMA user_version = 0") }
+        }
+        Database.open(file).use { reopened ->
+            assertEquals(Migrations.latestVersion().toString(), reopened.read { c -> pragma(c, "user_version") })
         }
     }
 

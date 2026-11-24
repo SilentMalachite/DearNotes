@@ -10,6 +10,7 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 import org.junit.jupiter.api.AfterEach
+import org.junit.jupiter.api.Assertions.assertDoesNotThrow
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -151,6 +152,82 @@ internal class AutoSaverTest {
         saver.close()
         assertEquals("終了直前", store.saves.first().first().text)
         assertFalse(saver.hasPending())
+    }
+
+    @Test
+    fun operationsAfterCloseAreSafe() {
+        val saver = newSaver(60_000L, 1000L)
+        val b = block("終了前")
+        saver.changed(b)
+        saver.close()
+
+        assertDoesNotThrow { saver.changed(block("終了後")) }
+        assertDoesNotThrow { saver.deleted(b.id) }
+        assertTrue(saver.flushAndWait(1L, TimeUnit.SECONDS))
+        assertFalse(saver.hasPending())
+        assertEquals(1, store.saves.size)
+        // 二重 close も安全であること
+        assertDoesNotThrow { saver.close() }
+    }
+
+    @Test
+    fun closeWaitsForInFlightSaveBeforeReturning() {
+        val enteredSave = CountDownLatch(1)
+        val allowFinish = CountDownLatch(1)
+        val closeFinished = CountDownLatch(1)
+        store.onSaveAttempt = {
+            enteredSave.countDown()
+            assertTrue(allowFinish.await(3L, TimeUnit.SECONDS))
+        }
+        val saver = newSaver(10L, 1000L)
+        saver.changed(block("保存中"))
+        assertTrue(enteredSave.await(3L, TimeUnit.SECONDS))
+
+        val closer = Thread {
+            saver.close()
+            closeFinished.countDown()
+        }
+        closer.start()
+        // 保存完了前には close() が戻らないことを確認
+        assertFalse(closeFinished.await(100L, TimeUnit.MILLISECONDS))
+        allowFinish.countDown()
+        assertTrue(closeFinished.await(3L, TimeUnit.SECONDS))
+        closer.join(3_000L)
+        assertEquals(1, store.saves.size)
+    }
+
+    @Test
+    fun statusOrderKeepsSavingBeforeConcurrentDirty() {
+        val enteredSave = CountDownLatch(1)
+        val allowFirstSaveToFinish = CountDownLatch(1)
+        val attempt = AtomicInteger()
+        store.onSaveAttempt = {
+            if (attempt.incrementAndGet() == 1) {
+                enteredSave.countDown()
+                assertTrue(allowFirstSaveToFinish.await(3L, TimeUnit.SECONDS))
+            }
+        }
+        val saver = newSaver(10L, 1000L)
+        // リスナー内で status()/hasPending() を参照してもデッドロックしないこと
+        saver.setListener { s ->
+            saver.status()
+            saver.hasPending()
+            statuses.add(s)
+        }
+        val b = block("初回")
+        saver.changed(b)
+        assertTrue(enteredSave.await(3L, TimeUnit.SECONDS))
+        // 1回目の保存が SAVING へ移った後に新しい変更が入っても順序が逆転しないこと
+        saver.changed(b.withContent("保存中の追記", emptyList()))
+        allowFirstSaveToFinish.countDown()
+
+        waitUntil { saver.status() == SaveStatus.SAVED && store.saves.size == 2 && statuses.lastOrNull() == SaveStatus.SAVED }
+        // 初回 DIRTY -> SAVING -> 追記による DIRTY -> 1回目完了時 DIRTY -> 2回目 SAVING -> SAVED
+        val firstSaving = statuses.indexOf(SaveStatus.SAVING)
+        assertTrue(firstSaving > 0)
+        assertEquals(SaveStatus.DIRTY, statuses[firstSaving - 1])
+        assertEquals(SaveStatus.DIRTY, statuses[firstSaving + 1])
+        assertEquals(SaveStatus.SAVED, statuses.last())
     }
 
     private fun block(text: String): Block {

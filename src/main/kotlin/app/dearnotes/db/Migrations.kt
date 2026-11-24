@@ -81,8 +81,14 @@ internal object Migrations {
                 if (rs.next()) rs.getInt(1) else 0
             }
         }
+        if (current < 0) {
+            throw SQLException("データベースの版 $current が不正")
+        }
         if (current > STEPS.size) {
             throw SQLException("データベースの版 $current はこのアプリより新しい")
+        }
+        if (target < 0 || target > STEPS.size) {
+            throw IllegalArgumentException("移行先の版 $target が範囲外 (0..${STEPS.size})")
         }
         val auto = conn.autoCommit
         conn.autoCommit = false
@@ -94,9 +100,13 @@ internal object Migrations {
                 }
                 conn.commit()
             }
-        } catch (e: SQLException) {
-            conn.rollback()
-            throw e
+        } catch (t: Throwable) {
+            try {
+                conn.rollback()
+            } catch (rollbackErr: Throwable) {
+                t.addSuppressed(rollbackErr)
+            }
+            throw t
         } finally {
             conn.autoCommit = auto
         }

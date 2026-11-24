@@ -183,5 +183,35 @@ internal class PageRepoTest : DbTestBase() {
         assertEquals(listOf(kyoto.id), pages.findByTitle("京都", 1).map { it.id })
     }
 
+    @Test
+    fun findByTitleOrdersCaseInsensitivelyAndExcludesBlankTitles() {
+        val exact = pages.create(null, "Notes")
+        val prefix = pages.create(null, "notes-extra")
+        val middle = pages.create(null, "my NOTES page")
+        pages.create(null, "   ")
+        pages.create(null, "\t\n")
+        pages.create(null, "　")
+        // updated_at の大小関係に依存せず完全一致・前方一致が優先されるよう明示的に時刻を設定する
+        db.write { c ->
+            c.prepareStatement("UPDATE pages SET updated_at = ? WHERE id = ?").use { ps ->
+                ps.setLong(1, 100L)
+                ps.setString(2, exact.id)
+                ps.executeUpdate()
+                ps.setLong(1, 200L)
+                ps.setString(2, prefix.id)
+                ps.executeUpdate()
+                ps.setLong(1, 300L)
+                ps.setString(2, middle.id)
+                ps.executeUpdate()
+            }
+        }
+
+        assertEquals(listOf(exact.id, prefix.id, middle.id), pages.findByTitle("notes", 10).map { it.id })
+        assertEquals(listOf(exact.id), pages.findByTitle("NOTES", 1).map { it.id })
+        assertEquals(3, pages.findByTitle("", 10).size)
+        assertEquals(emptyList<Page>(), pages.findByTitle("notes", 0))
+        assertEquals(emptyList<Page>(), pages.findByTitle("notes", -5))
+    }
+
     private fun titles(): List<String?> = pages.listAlive().map { it.title }
 }

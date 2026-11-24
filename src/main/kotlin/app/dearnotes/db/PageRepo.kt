@@ -90,19 +90,27 @@ class PageRepo(private val db: Database) {
     fun findByTitle(query: String?, limit: Int): List<Page> {
         val q = if (query == null) "" else query.strip()
         return db.read { c ->
-            query(
-                c,
+            c.prepareStatement(
                 """
                 SELECT $COLUMNS
                 FROM pages
-                WHERE deleted_at IS NULL AND title <> '' AND title LIKE ? ESCAPE '\'
-                ORDER BY title = ? DESC, instr(title, ?) = 1 DESC, updated_at DESC
-                LIMIT ${maxOf(0, limit)}
+                WHERE deleted_at IS NULL
+                  AND trim(title, ' ' || char(9) || char(10) || char(13) || char(12288)) <> ''
+                  AND title LIKE ? ESCAPE '\'
+                ORDER BY title = ? COLLATE NOCASE DESC, instr(lower(title), lower(?)) = 1 DESC, updated_at DESC
+                LIMIT ?
                 """.trimIndent(),
-                "%" + SearchRepo.escapeLike(q) + "%",
-                q,
-                q,
-            )
+            ).use { ps ->
+                ps.setString(1, "%" + SearchRepo.escapeLike(q) + "%")
+                ps.setString(2, q)
+                ps.setString(3, q)
+                ps.setInt(4, maxOf(0, limit))
+                ps.executeQuery().use { rs ->
+                    val out = ArrayList<Page>()
+                    while (rs.next()) out.add(map(rs))
+                    out
+                }
+            }
         }
     }
 

@@ -3,7 +3,6 @@ package app.dearnotes.db
 import java.nio.file.Path
 import java.sql.Connection
 import java.sql.DriverManager
-import java.sql.SQLException
 import java.util.concurrent.locks.ReentrantLock
 
 /**
@@ -51,18 +50,33 @@ class Database private constructor(
 
     override fun close() {
         writeLock.lock()
-        readLock.lock()
         try {
-            reader.close()
+            readLock.lock()
             try {
-                writer.createStatement().use { s ->
-                    s.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+                var firstError: Throwable? = null
+                try {
+                    reader.close()
+                } catch (t: Throwable) {
+                    firstError = t
                 }
+                try {
+                    writer.createStatement().use { s ->
+                        s.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+                    }
+                } catch (t: Throwable) {
+                    if (firstError == null) firstError = t else firstError.addSuppressed(t)
+                } finally {
+                    try {
+                        writer.close()
+                    } catch (t: Throwable) {
+                        if (firstError == null) firstError = t else firstError.addSuppressed(t)
+                    }
+                }
+                if (firstError != null) throw firstError
             } finally {
-                writer.close()
+                readLock.unlock()
             }
         } finally {
-            readLock.unlock()
             writeLock.unlock()
         }
     }
@@ -73,21 +87,35 @@ class Database private constructor(
             try {
                 Migrations.apply(w)
                 return Database(w, connect(file))
-            } catch (e: SQLException) {
-                w.close()
-                throw e
+            } catch (t: Throwable) {
+                try {
+                    w.close()
+                } catch (closeErr: Throwable) {
+                    t.addSuppressed(closeErr)
+                }
+                throw t
             }
         }
 
         private fun connect(file: Path): Connection {
             val conn = DriverManager.getConnection("jdbc:sqlite:" + file.toAbsolutePath())
-            conn.createStatement().use { s ->
-                s.execute("PRAGMA journal_mode = WAL")
-                s.execute("PRAGMA synchronous = NORMAL")
-                s.execute("PRAGMA foreign_keys = ON")
-                s.execute("PRAGMA busy_timeout = 5000")
+            try {
+                conn.createStatement().use { s ->
+                    // WAL 切替時の SQLITE_BUSY を避けるため busy_timeout を先頭で設定する
+                    s.execute("PRAGMA busy_timeout = 5000")
+                    s.execute("PRAGMA journal_mode = WAL")
+                    s.execute("PRAGMA synchronous = NORMAL")
+                    s.execute("PRAGMA foreign_keys = ON")
+                }
+                return conn
+            } catch (t: Throwable) {
+                try {
+                    conn.close()
+                } catch (closeErr: Throwable) {
+                    t.addSuppressed(closeErr)
+                }
+                throw t
             }
-            return conn
         }
     }
 }

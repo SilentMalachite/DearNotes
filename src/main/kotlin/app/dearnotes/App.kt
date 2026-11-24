@@ -65,20 +65,44 @@ class App : Application() {
     /** ウィンドウを閉じたら、未保存の変更を書いてから DB を閉じる。 */
     override fun stop() {
         // Cmd+Q などウィンドウの close request を通らない終わり方でも、名前を書いておく
-        window?.flushTitle()
-        saver?.close()
-        val database = db
-        if (database != null) {
-            try {
-                database.close()
-            } catch (e: Exception) {
-                LOG.log(Level.WARNING, "DB を閉じられなかった", e)
-            }
-        }
+        shutdown(
+            flushTitle = { window?.flushTitle() },
+            closeSaver = { saver?.close() },
+            closeDatabase = { db?.close() },
+        )
     }
 
     companion object {
         private val LOG: Logger = Logger.getLogger(App::class.java.name)
+
+        /** 終了時の後処理を順に実行する。途中で失敗しても後続のクローズ処理を止めず、ログ記録に留める。 */
+        internal fun shutdown(
+            flushTitle: () -> Unit,
+            closeSaver: () -> Unit,
+            closeDatabase: () -> Unit,
+        ) {
+            try {
+                try {
+                    flushTitle()
+                } catch (e: Exception) {
+                    LOG.log(Level.WARNING, "終了時のタイトル保存に失敗した", e)
+                }
+            } finally {
+                try {
+                    try {
+                        closeSaver()
+                    } catch (e: Exception) {
+                        LOG.log(Level.WARNING, "AutoSaver を閉じられなかった", e)
+                    }
+                } finally {
+                    try {
+                        closeDatabase()
+                    } catch (e: Exception) {
+                        LOG.log(Level.WARNING, "DB を閉じられなかった", e)
+                    }
+                }
+            }
+        }
 
         /** 許可された外部リンク（http / https / mailto）だけを OS へ渡す。 */
         internal fun openExternalLink(raw: String, open: (String) -> Unit) {

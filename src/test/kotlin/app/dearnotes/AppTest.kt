@@ -1,5 +1,6 @@
 package app.dearnotes
 
+import org.junit.jupiter.api.Assertions.assertDoesNotThrow
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Test
@@ -75,5 +76,27 @@ internal class AppTest {
             listOf("https://example.com/ok", "mailto:user@example.com"),
             opened,
         )
+    }
+
+    @Test
+    fun shutdownRunsAllCloseStepsEvenWhenEarlierStepsThrow() {
+        val order = ArrayList<String>()
+        assertDoesNotThrow {
+            App.shutdown(
+                flushTitle = {
+                    order.add("flushTitle")
+                    throw IllegalStateException("タイトル保存失敗")
+                },
+                closeSaver = {
+                    order.add("closeSaver")
+                    throw RuntimeException("AutoSaver 終了失敗")
+                },
+                closeDatabase = {
+                    order.add("closeDatabase")
+                    throw RuntimeException("DB 終了失敗")
+                },
+            )
+        }
+        assertEquals(listOf("flushTitle", "closeSaver", "closeDatabase"), order)
     }
 }

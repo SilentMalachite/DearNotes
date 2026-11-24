@@ -3,13 +3,15 @@ package app.dearnotes.save
 import app.dearnotes.model.Block
 import java.util.LinkedHashMap
 import java.util.LinkedHashSet
-import java.util.function.Consumer
 import java.util.concurrent.ExecutionException
 import java.util.concurrent.Executors
+import java.util.concurrent.Future
+import java.util.concurrent.RejectedExecutionException
 import java.util.concurrent.ScheduledExecutorService
 import java.util.concurrent.ScheduledFuture
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
+import java.util.function.Consumer
 import java.util.logging.Level
 import java.util.logging.Logger
 
@@ -31,7 +33,10 @@ class AutoSaver(
     private val lock = Any()
     private val pending = LinkedHashMap<String, Block>()
     private val pendingDeletes = LinkedHashSet<String>()
+    private val statusQueue = ArrayDeque<SaveStatus>()
     private var scheduled: ScheduledFuture<*>? = null
+    private var closed = false
+    private var drainingStatus = false
 
     @Volatile
     private var state: SaveStatus = SaveStatus.SAVED
@@ -48,62 +53,119 @@ class AutoSaver(
     fun status(): SaveStatus = state
 
     fun changed(block: Block) {
+        var notify = false
         synchronized(lock) {
+            if (closed) return
             pending[block.id] = block
             pendingDeletes.remove(block.id)
-            reschedule(delayMillis)
-            if (state != SaveStatus.FAILED) setStatus(SaveStatus.DIRTY)
+            rescheduleLocked(delayMillis)
+            if (state != SaveStatus.FAILED) {
+                recordStatusLocked(SaveStatus.DIRTY)
+                notify = true
+            }
         }
+        if (notify) dispatchStatuses()
     }
 
     fun deleted(blockId: String) {
+        var notify = false
         synchronized(lock) {
+            if (closed) return
             pending.remove(blockId)
             pendingDeletes.add(blockId)
-            reschedule(delayMillis)
-            if (state != SaveStatus.FAILED) setStatus(SaveStatus.DIRTY)
+            rescheduleLocked(delayMillis)
+            if (state != SaveStatus.FAILED) {
+                recordStatusLocked(SaveStatus.DIRTY)
+                notify = true
+            }
         }
+        if (notify) dispatchStatuses()
     }
 
     /** まだ書いていない変更を今すぐ書き、終わるまで待つ。ページを開き直す前に使う。 */
     fun flushAndWait(timeout: Long, unit: TimeUnit): Boolean {
-        synchronized(lock) {
+        val future = synchronized(lock) {
+            if (closed || writer.isShutdown) return !hasPendingLocked()
             scheduled?.cancel(false)
             scheduled = null
+            try {
+                writer.submit(Runnable { flushNow() })
+            } catch (_: RejectedExecutionException) {
+                return !hasPendingLocked()
+            }
         }
-        try {
-            writer.submit(Runnable { flushNow() }).get(timeout, unit)
-            return !hasPending()
-        } catch (e: InterruptedException) {
-            Thread.currentThread().interrupt()
-            return false
-        } catch (e: ExecutionException) {
-            LOG.log(Level.WARNING, "flush に失敗", e)
-            return false
-        } catch (e: TimeoutException) {
-            LOG.log(Level.WARNING, "flush に失敗", e)
-            return false
-        }
+        return awaitFlush(future, timeout, unit)
     }
 
     fun hasPending(): Boolean {
         return synchronized(lock) {
-            !pending.isEmpty() || !pendingDeletes.isEmpty()
+            hasPendingLocked()
         }
     }
 
     /** ウィンドウを閉じるとき: 残りを書いてからスレッドを止める。 */
     override fun close() {
-        if (writer.isShutdown) return
-        val ok = flushAndWait(10L, TimeUnit.SECONDS)
-        if (!ok) LOG.warning("保存できなかった変更を残して終了する")
-        writer.shutdownNow()
+        val finalFlush = synchronized(lock) {
+            if (closed) return
+            closed = true
+            scheduled?.cancel(false)
+            scheduled = null
+            try {
+                writer.submit(Runnable { flushNow() })
+            } catch (_: RejectedExecutionException) {
+                null
+            }
+        }
+        val ok = if (finalFlush != null) {
+            awaitFlush(finalFlush, CLOSE_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+        } else {
+            !hasPending()
+        }
+        if (ok) {
+            writer.shutdown()
+        } else {
+            LOG.warning("保存できなかった変更を残して終了する")
+            writer.shutdownNow()
+        }
+        try {
+            if (!writer.awaitTermination(TERMINATION_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
+                writer.shutdownNow()
+                if (!writer.awaitTermination(TERMINATION_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
+                    LOG.warning("保存スレッドの終了待機がタイムアウトした")
+                }
+            }
+        } catch (_: InterruptedException) {
+            writer.shutdownNow()
+            Thread.currentThread().interrupt()
+        }
     }
 
-    private fun reschedule(delay: Long) {
-        if (writer.isShutdown) return
+    private fun awaitFlush(future: Future<*>, timeout: Long, unit: TimeUnit): Boolean {
+        return try {
+            future.get(timeout, unit)
+            !hasPending()
+        } catch (_: InterruptedException) {
+            Thread.currentThread().interrupt()
+            false
+        } catch (e: ExecutionException) {
+            LOG.log(Level.WARNING, "flush に失敗", e)
+            false
+        } catch (e: TimeoutException) {
+            LOG.log(Level.WARNING, "flush に失敗", e)
+            false
+        }
+    }
+
+    private fun hasPendingLocked(): Boolean = !pending.isEmpty() || !pendingDeletes.isEmpty()
+
+    private fun rescheduleLocked(delay: Long) {
+        if (closed || writer.isShutdown) return
         scheduled?.cancel(false)
-        scheduled = writer.schedule(Runnable { flushNow() }, delay, TimeUnit.MILLISECONDS)
+        scheduled = try {
+            writer.schedule(Runnable { flushNow() }, delay, TimeUnit.MILLISECONDS)
+        } catch (_: RejectedExecutionException) {
+            null
+        }
     }
 
     private fun flushNow() {
@@ -115,19 +177,22 @@ class AutoSaver(
                 val deletes = LinkedHashSet(pendingDeletes)
                 pending.clear()
                 pendingDeletes.clear()
+                // changed() / deleted() と同じロック内で SAVING を確定し、通知順の逆転を防ぐ
+                recordStatusLocked(SaveStatus.SAVING)
                 batch to deletes
             }
         } ?: return
+        dispatchStatuses()
         val (batch, deletes) = taken
-        setStatus(SaveStatus.SAVING)
         try {
             store.save(batch.values, deletes)
-            // changed() と同じロックの中で知らせるので、最後に届く状態が正しくなる
+            // changed() と同じロックの中で状態を決めるので、最後に届く状態が正しくなる
             synchronized(lock) {
-                setStatus(
+                recordStatusLocked(
                     if (pending.isEmpty() && pendingDeletes.isEmpty()) SaveStatus.SAVED else SaveStatus.DIRTY,
                 )
             }
+            dispatchStatuses()
         } catch (e: Exception) {
             // Kotlin には検査例外がないので、SQLException 以外の検査例外も来る
             keepAndRetry(batch, deletes, e)
@@ -144,18 +209,46 @@ class AutoSaver(
             for (id in deletes) {
                 if (!pending.containsKey(id)) pendingDeletes.add(id)
             }
-            reschedule(retryMillis)
-            setStatus(SaveStatus.FAILED)
+            rescheduleLocked(retryMillis)
+            recordStatusLocked(SaveStatus.FAILED)
         }
+        dispatchStatuses()
     }
 
-    private fun setStatus(s: SaveStatus) {
+    private fun recordStatusLocked(s: SaveStatus) {
         state = s
-        val l = listener
-        ui(Runnable { l.accept(s) })
+        statusQueue.addLast(s)
+    }
+
+    /** ロック外でキューを順番に流し、状態決定順の維持とデッドロック回避を両立する。 */
+    private fun dispatchStatuses() {
+        synchronized(lock) {
+            if (drainingStatus) return
+            drainingStatus = true
+        }
+        while (true) {
+            val next = synchronized(lock) {
+                if (statusQueue.isEmpty()) {
+                    drainingStatus = false
+                    return
+                }
+                statusQueue.removeFirst()
+            }
+            try {
+                val l = listener
+                ui(Runnable { l.accept(next) })
+            } catch (t: Throwable) {
+                synchronized(lock) {
+                    drainingStatus = false
+                }
+                throw t
+            }
+        }
     }
 
     companion object {
         private val LOG: Logger = Logger.getLogger(AutoSaver::class.java.name)
+        private const val CLOSE_TIMEOUT_SECONDS = 10L
+        private const val TERMINATION_TIMEOUT_SECONDS = 5L
     }
 }

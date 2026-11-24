@@ -83,6 +83,13 @@ internal class SearchRepoTest : DbTestBase() {
     }
 
     @Test
+    fun nulCharacterInQueryDoesNotFailFts5() {
+        assertDoesNotThrow { search.search("abc\u0000def") }
+        assertDoesNotThrow { search.search("\u0000\u0000\u0000") }
+        assertDoesNotThrow { search.search("コーヒー\u0000豆") }
+    }
+
+    @Test
     fun snippetIsCutAroundMatch() {
         val text = "あ".repeat(40) + "目印" + "い".repeat(40)
         val s = SearchRepo.snippet(text, "目印")

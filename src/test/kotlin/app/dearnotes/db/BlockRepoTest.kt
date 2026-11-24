@@ -69,6 +69,24 @@ internal class BlockRepoTest : DbTestBase() {
     }
 
     @Test
+    fun deletingBlocksAloneTouchesPage() {
+        val p = pages.create(null, "x")
+        val b = Block.empty(p.id, BlockType.PARAGRAPH, 1.0)
+        blocks.save(listOf(b), emptyList())
+        // 削除前後での updated_at 更新を確実に判定できるよう古い時刻へ戻す
+        db.write { c ->
+            c.prepareStatement("UPDATE pages SET updated_at = ? WHERE id = ?").use { ps ->
+                ps.setLong(1, 1_000L)
+                ps.setString(2, p.id)
+                ps.executeUpdate()
+            }
+        }
+        blocks.save(emptyList(), listOf(b.id, "non-existent-block-id"))
+        assertTrue((pages.get(p.id) ?: error("missing")).updatedAt > 1_000L)
+        assertEquals(emptyList<Block>(), blocks.listByPage(p.id))
+    }
+
+    @Test
     fun savesCollapsedState() {
         val p = pages.create(null, "x")
         val b = Block.empty(p.id, BlockType.H2, 1024.0).withContent("1日目", emptyList()).withCollapsed(true)

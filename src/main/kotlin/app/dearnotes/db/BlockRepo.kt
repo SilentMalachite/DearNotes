@@ -97,49 +97,64 @@ class BlockRepo(private val db: Database) : BlockStore {
         db.write { c ->
             val now = System.currentTimeMillis()
             val pages = HashSet<String>()
-            c.prepareStatement(
-                """
-                INSERT INTO blocks (id, page_id, type, text, marks, checked, indent, sort_key, collapsed, updated_at)
-                SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
-                WHERE EXISTS (SELECT 1 FROM pages WHERE id = ?)
-                ON CONFLICT (id) DO UPDATE SET
-                  page_id = excluded.page_id, type = excluded.type, text = excluded.text,
-                  marks = excluded.marks, checked = excluded.checked, indent = excluded.indent,
-                  sort_key = excluded.sort_key, collapsed = excluded.collapsed,
-                  updated_at = excluded.updated_at
-                """.trimIndent(),
-            ).use { ps ->
-                for (b in upserts) {
-                    ps.setString(1, b.id)
-                    ps.setString(2, b.pageId)
-                    ps.setString(3, b.type.dbName())
-                    ps.setString(4, b.text)
-                    ps.setString(5, MarksCodec.encode(b.marks))
-                    ps.setInt(6, if (b.checked) 1 else 0)
-                    ps.setInt(7, b.indent)
-                    ps.setDouble(8, b.sortKey)
-                    ps.setInt(9, if (b.collapsed) 1 else 0)
-                    ps.setLong(10, now)
-                    ps.setString(11, b.pageId)
-                    ps.addBatch()
-                    pages.add(b.pageId)
+            if (upserts.isNotEmpty()) {
+                c.prepareStatement(
+                    """
+                    INSERT INTO blocks (id, page_id, type, text, marks, checked, indent, sort_key, collapsed, updated_at)
+                    SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+                    WHERE EXISTS (SELECT 1 FROM pages WHERE id = ?)
+                    ON CONFLICT (id) DO UPDATE SET
+                      page_id = excluded.page_id, type = excluded.type, text = excluded.text,
+                      marks = excluded.marks, checked = excluded.checked, indent = excluded.indent,
+                      sort_key = excluded.sort_key, collapsed = excluded.collapsed,
+                      updated_at = excluded.updated_at
+                    """.trimIndent(),
+                ).use { ps ->
+                    for (b in upserts) {
+                        ps.setString(1, b.id)
+                        ps.setString(2, b.pageId)
+                        ps.setString(3, b.type.dbName())
+                        ps.setString(4, b.text)
+                        ps.setString(5, MarksCodec.encode(b.marks))
+                        ps.setInt(6, if (b.checked) 1 else 0)
+                        ps.setInt(7, b.indent)
+                        ps.setDouble(8, b.sortKey)
+                        ps.setInt(9, if (b.collapsed) 1 else 0)
+                        ps.setLong(10, now)
+                        ps.setString(11, b.pageId)
+                        ps.addBatch()
+                        pages.add(b.pageId)
+                    }
+                    ps.executeBatch()
                 }
-                ps.executeBatch()
             }
-            c.prepareStatement("DELETE FROM blocks WHERE id = ?").use { ps ->
-                for (id in deletes) {
-                    ps.setString(1, id)
-                    ps.addBatch()
+            if (deletes.isNotEmpty()) {
+                // 削除のみの更新でも所属ページの updated_at を進められるよう、削除前に page_id を集める
+                c.prepareStatement("SELECT page_id FROM blocks WHERE id = ?").use { ps ->
+                    for (id in deletes) {
+                        ps.setString(1, id)
+                        ps.executeQuery().use { rs ->
+                            if (rs.next()) pages.add(rs.getString(1))
+                        }
+                    }
                 }
-                ps.executeBatch()
+                c.prepareStatement("DELETE FROM blocks WHERE id = ?").use { ps ->
+                    for (id in deletes) {
+                        ps.setString(1, id)
+                        ps.addBatch()
+                    }
+                    ps.executeBatch()
+                }
             }
-            c.prepareStatement("UPDATE pages SET updated_at = ? WHERE id = ?").use { ps ->
-                for (pageId in pages) {
-                    ps.setLong(1, now)
-                    ps.setString(2, pageId)
-                    ps.addBatch()
+            if (pages.isNotEmpty()) {
+                c.prepareStatement("UPDATE pages SET updated_at = ? WHERE id = ?").use { ps ->
+                    for (pageId in pages) {
+                        ps.setLong(1, now)
+                        ps.setString(2, pageId)
+                        ps.addBatch()
+                    }
+                    ps.executeBatch()
                 }
-                ps.executeBatch()
             }
             null
         }

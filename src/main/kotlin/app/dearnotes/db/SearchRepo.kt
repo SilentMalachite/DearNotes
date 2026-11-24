@@ -28,7 +28,8 @@ class SearchRepo(private val db: Database) {
         return db.read { c ->
             val hits = LinkedHashMap<String, Hit>()
             for (h in titleSearch(c, q)) hits.putIfAbsent(h.pageId + ":", h)
-            val body = if (q.codePointCount(0, q.length) >= 3) {
+            // FTS5 のクエリパーサは NUL 文字で途中終了するため、NUL を含む場合は LIKE にフォールバックする
+            val body = if (q.codePointCount(0, q.length) >= 3 && !q.contains('\u0000')) {
                 ftsSearch(c, "\"" + q.replace("\"", "\"\"") + "\"", q) // MATCH 用に引用
             } else {
                 likeSearch(c, q)
