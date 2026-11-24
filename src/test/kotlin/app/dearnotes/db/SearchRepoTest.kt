@@ -90,6 +90,53 @@ internal class SearchRepoTest : DbTestBase() {
         assertTrue(s.contains("目印"))
     }
 
+    @Test
+    fun snippetHandlesLengthChangingCaseCharactersWithoutCrashing() {
+        // İ (U+0130) は lowercase(Locale.ROOT) で 2 文字に伸びるため、元文字列基準で探す必要がある
+        val text = "İ".repeat(30) + "ABC"
+        val s = SearchRepo.snippet(text, "abc")
+        assertTrue(s.startsWith("…"))
+        assertTrue(s.endsWith("ABC"))
+        assertEquals("…" + "İ".repeat(18) + "ABC", s)
+
+        // DB 検索経由でもクラッシュせず一致を返すこと
+        blocks.save(listOf(text(shopping, text, 3.0)), emptyList())
+        val hits = search.search("abc")
+        assertEquals(1, hits.size)
+        assertTrue(hits.first().snippet.endsWith("ABC"))
+    }
+
+    @Test
+    fun snippetDoesNotSplitSurrogatePairsAtBoundaries() {
+        // 先頭オフセットを変えてもサロゲートペアの途中で切れないこと
+        for (prefix in listOf("", "a")) {
+            val text = prefix + "😀".repeat(25) + "目印" + "😀".repeat(25)
+            val s = SearchRepo.snippet(text, "目印")
+            assertTrue(s.startsWith("…") && s.endsWith("…"))
+            assertTrue(s.contains("目印"))
+            assertNoLoneSurrogates(s)
+        }
+
+        // クエリが本文中で見つからないフォールバック時もサロゲート境界を壊さないこと
+        val fallback = SearchRepo.snippet("a" + "😀".repeat(25), "見つからない")
+        assertTrue(fallback.endsWith("…"))
+        assertNoLoneSurrogates(fallback)
+    }
+
+    private fun assertNoLoneSurrogates(s: String) {
+        var i = 0
+        while (i < s.length) {
+            val c = s[i]
+            if (Character.isHighSurrogate(c)) {
+                assertTrue(i + 1 < s.length && Character.isLowSurrogate(s[i + 1]), "孤立した上位サロゲート: index=$i")
+                i += 2
+            } else {
+                assertTrue(!Character.isLowSurrogate(c), "孤立した下位サロゲート: index=$i")
+                i++
+            }
+        }
+    }
+
     private fun text(p: Page, text: String, key: Double): Block {
         return Block.empty(p.id, BlockType.PARAGRAPH, key).withContent(text, emptyList())
     }

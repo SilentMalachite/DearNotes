@@ -53,8 +53,47 @@ internal class ExportTreeTest {
     @Test
     fun longNamesAreCutWithoutBreakingCharacters() {
         val name = ExportTree.fileName(titled("😀".repeat(150)))
-        assertEquals(100, name.codePointCount(0, name.length))
+        assertEquals(50, name.codePointCount(0, name.length))
+        assertTrue(name.toByteArray(StandardCharsets.UTF_8).size <= 200)
         assertTrue(name.codePoints().allMatch { c -> c == "😀".codePointAt(0) })
+    }
+
+    @Test
+    fun longJapaneseAndEmojiTitlesStayWithinUtf8ByteLimitEvenWithDuplicates() {
+        val longJa = "あ".repeat(120)
+        val longEmoji = "😀".repeat(100)
+        val jaName = ExportTree.fileName(titled(longJa))
+        assertEquals(66, jaName.codePointCount(0, jaName.length))
+        assertTrue(jaName.toByteArray(StandardCharsets.UTF_8).size <= 200)
+
+        // 切り詰め直前にドットや空白が来ても取り除かれること（66文字=198バイト + ". "=2バイト → 次の「あ」で切れる）
+        val jaWithDot = ExportTree.fileName(titled("あ".repeat(66) + ". あ"))
+        assertEquals("あ".repeat(66), jaWithDot)
+
+        // 実際に日本語長文・絵文字長文の同名兄弟を書き出し、連番 + .md を含めて 255 バイト以内で成功すること
+        val root = page("r", null, longJa, 0.0)
+        val ja1 = page("j1", "r", longJa, 1.0)
+        val ja2 = page("j2", "r", longJa, 2.0)
+        val em1 = page("e1", "r", longEmoji, 3.0)
+        val em2 = page("e2", "r", longEmoji, 4.0)
+
+        val written = ExportTree.write(dir, root, listOf(root, ja1, ja2, em1, em2), NO_BLOCKS)
+
+        assertEquals(5, written.size)
+        for (file in written) {
+            assertTrue(Files.isRegularFile(file))
+            for (part in dir.relativize(file)) {
+                val bytes = part.toString().toByteArray(StandardCharsets.UTF_8).size
+                assertTrue(bytes <= 255, "255 バイト超過: $bytes ($part)")
+            }
+        }
+        val exportedNames = list(dir.resolve(jaName))
+        assertTrue(exportedNames.contains("$jaName.md"))
+        assertTrue(exportedNames.contains("$jaName (2).md"))
+        assertTrue(exportedNames.contains("$jaName (3).md"))
+        val emojiName = ExportTree.fileName(titled(longEmoji))
+        assertTrue(exportedNames.contains("$emojiName.md"))
+        assertTrue(exportedNames.contains("$emojiName (2).md"))
     }
 
     @Test

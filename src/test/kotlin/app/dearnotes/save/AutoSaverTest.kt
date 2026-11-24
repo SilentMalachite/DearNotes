@@ -6,6 +6,7 @@ import java.io.IOException
 import java.sql.SQLException
 import java.util.ArrayList
 import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 import org.junit.jupiter.api.AfterEach
@@ -26,7 +27,11 @@ internal class AutoSaverTest {
         @Volatile
         var failure: () -> Exception = { SQLException("disk full") }
 
+        @Volatile
+        var onSaveAttempt: (() -> Unit)? = null
+
         override fun save(upserts: Collection<Block>, deletes: Collection<String>) {
+            onSaveAttempt?.invoke()
             if (failuresLeft.getAndDecrement() > 0) throw failure()
             saves.add(upserts.toList())
             this.deletes.add(deletes.toList())
@@ -110,6 +115,33 @@ internal class AutoSaverTest {
         val written = ArrayList<String>()
         store.saves.forEach { batch -> batch.forEach { x -> written.add(x.text) } }
         assertEquals(listOf("新しい"), written)
+    }
+
+    @Test
+    fun retryDoesNotRequeueBlockDeletedDuringFailedSave() {
+        val enteredSave = CountDownLatch(1)
+        val allowFailure = CountDownLatch(1)
+        store.failuresLeft.set(1)
+        store.onSaveAttempt = {
+            if (enteredSave.count > 0) {
+                enteredSave.countDown()
+                assertTrue(allowFailure.await(3L, TimeUnit.SECONDS))
+            }
+        }
+        val saver = newSaver(10L, 50L)
+        val b = block("保存中に消される")
+        saver.changed(b)
+
+        // 1回目の save() 実行中に削除を割り込ませ、その直後に save() を失敗させる
+        assertTrue(enteredSave.await(3L, TimeUnit.SECONDS))
+        saver.deleted(b.id)
+        allowFailure.countDown()
+
+        waitUntil { saver.status() == SaveStatus.SAVED && store.deletes.isNotEmpty() }
+        // 次回リトライで削除済みブロックが upserts に含まれず、deletes のみに載ること
+        assertEquals(listOf(emptyList<Block>()), store.saves)
+        assertEquals(listOf(listOf(b.id)), store.deletes)
+        assertFalse(saver.hasPending())
     }
 
     @Test

@@ -50,20 +50,45 @@ object ExportTree {
         "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
     )
     private const val MAX_NAME = 100
+    // 連番「 (n)」と「.md」を足しても macOS / Linux の 255 UTF-8 バイト上限に収まるよう余裕を残す
+    private const val MAX_NAME_BYTES = 200
 
     /** ページ名をファイル名にする。拡張子は付けない。 */
     fun fileName(p: Page): String {
         var name = BAD.matcher(p.displayTitle()).replaceAll("_").strip()
-        // パスの長さの上限を越えないよう切る。文字の途中では切らない
-        if (name.codePointCount(0, name.length) > MAX_NAME) {
-            name = name.substring(0, name.offsetByCodePoints(0, MAX_NAME))
-        }
+        // パスの長さと UTF-8 バイト数の上限を越えないよう切る。文字の途中では切らない
+        name = truncateName(name)
         name = name.replace(Regex("[. ]+$"), "") // Windows は末尾の . と空白を消す（切った後にも）
         if (name.startsWith(".")) name = "_" + name.substring(1) // 隠しファイルにしない
         // Windows は「CON.txt」のように拡張子が付いても予約名と見る
         val stem = name.split(Regex("""\."""), limit = 2)[0].strip()
         if (name.isEmpty() || RESERVED.contains(stem.uppercase(Locale.ROOT))) name = "_" + name
         return name
+    }
+
+    /** コードポイント数と UTF-8 バイト数の上限を超えない位置で、サロゲート境界を保ちつつ切り詰める。 */
+    private fun truncateName(name: String): String {
+        var i = 0
+        var codePoints = 0
+        var bytes = 0
+        while (i < name.length) {
+            val cp = name.codePointAt(i)
+            val cpBytes = utf8ByteLength(cp)
+            if (codePoints >= MAX_NAME || bytes + cpBytes > MAX_NAME_BYTES) {
+                return name.substring(0, i)
+            }
+            i += Character.charCount(cp)
+            codePoints++
+            bytes += cpBytes
+        }
+        return name
+    }
+
+    private fun utf8ByteLength(cp: Int): Int = when {
+        cp <= 0x7F -> 1
+        cp <= 0x7FF -> 2
+        cp <= 0xFFFF -> 3
+        else -> 4
     }
 
     /**

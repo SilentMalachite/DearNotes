@@ -5,8 +5,6 @@ import app.dearnotes.strip
 import java.sql.Connection
 import java.util.ArrayList
 import java.util.LinkedHashMap
-import java.util.Locale
-import kotlin.math.max
 import kotlin.math.min
 
 /** 全ページを語句で探す。日本語の部分一致は FTS5 trigram で探す。 */
@@ -135,14 +133,53 @@ class SearchRepo(private val db: Database) {
             return s.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
         }
 
-        /** 一致した場所の前後だけを切り出す。 */
+        /** 一致した場所の前後だけを切り出す。文字長が変わる小文字化やサロゲート分断を避ける。 */
         internal fun snippet(text: String, q: String): String {
             val flat = text.replace('\n', ' ')
-            var at = flat.lowercase(Locale.ROOT).indexOf(q.lowercase(Locale.ROOT))
-            if (at < 0) at = 0
-            val from = max(0, at - SNIPPET_RADIUS)
-            val to = min(flat.length, at + q.length + SNIPPET_RADIUS)
+            // lowercase() の文字長変化（例: İ → i + 結合ドット）による位置ずれを防ぐため元文字列上で探す
+            val found = flat.indexOf(q, ignoreCase = true)
+            var matchStart = if (found >= 0) found else 0
+            var matchEnd = if (found >= 0) {
+                found + q.length
+            } else {
+                offsetForward(flat, 0, q.codePointCount(0, q.length))
+            }
+            // サロゲートペアの途中を指していれば境界へ寄せる
+            if (matchStart > 0 && matchStart < flat.length &&
+                Character.isSurrogatePair(flat[matchStart - 1], flat[matchStart])
+            ) {
+                matchStart--
+            }
+            if (matchEnd > 0 && matchEnd < flat.length &&
+                Character.isSurrogatePair(flat[matchEnd - 1], flat[matchEnd])
+            ) {
+                matchEnd++
+            }
+            val from = offsetBackward(flat, matchStart, SNIPPET_RADIUS)
+            val to = offsetForward(flat, matchEnd, SNIPPET_RADIUS)
             return (if (from > 0) "…" else "") + flat.substring(from, to) + (if (to < flat.length) "…" else "")
+        }
+
+        /** start からコードポイント単位で前へ進んだ UTF-16 インデックスを返す。 */
+        private fun offsetBackward(s: String, start: Int, codePoints: Int): Int {
+            var i = start
+            var remaining = codePoints
+            while (i > 0 && remaining > 0) {
+                i = if (i >= 2 && Character.isSurrogatePair(s[i - 2], s[i - 1])) i - 2 else i - 1
+                remaining--
+            }
+            return i
+        }
+
+        /** start からコードポイント単位で後ろへ進んだ UTF-16 インデックスを返す。 */
+        private fun offsetForward(s: String, start: Int, codePoints: Int): Int {
+            var i = start
+            var remaining = codePoints
+            while (i < s.length && remaining > 0) {
+                i = if (i + 1 < s.length && Character.isSurrogatePair(s[i], s[i + 1])) i + 2 else i + 1
+                remaining--
+            }
+            return i
         }
     }
 }

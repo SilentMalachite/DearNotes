@@ -137,9 +137,9 @@ class AutoSaver(
     private fun keepAndRetry(batch: Map<String, Block>, deletes: Set<String>, e: Exception) {
         LOG.log(Level.WARNING, "保存に失敗。${retryMillis}ms 後に再試行する", e)
         synchronized(lock) {
-            // 失敗している間に入った新しい入力は上書きしない
+            // 失敗している間に入った新しい入力や削除は上書きしない
             for ((id, block) in batch) {
-                pending.putIfAbsent(id, block)
+                if (!pendingDeletes.contains(id)) pending.putIfAbsent(id, block)
             }
             for (id in deletes) {
                 if (!pending.containsKey(id)) pendingDeletes.add(id)
