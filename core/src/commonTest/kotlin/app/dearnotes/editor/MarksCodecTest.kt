@@ -57,4 +57,27 @@ class MarksCodecTest {
         assertEquals(listOf(Mark(0, 3, Style.BOLD)), MarksCodec.decode("[[0,3,\"bold\",]]"))
         assertEquals(listOf(Mark(0, 3, Style.PAGE, "id")), MarksCodec.decode("[[0,3,\"page\",\"id\",]]"))
     }
+
+    @Test
+    fun targetWithSpecialJsonCharactersRoundTrips() {
+        val special = "a,b[c]{d}\"e\\f\ng\rh\ti\u0001j"
+        val marks = listOf(Mark(0, 4, Style.PAGE, special), Mark(5, 8, Style.BOLD))
+        val encoded = MarksCodec.encode(marks)
+        assertEquals(marks, MarksCodec.decode(encoded))
+    }
+
+    @Test
+    fun decodeSkipsMalformedEntriesWithoutDroppingFollowingMarks() {
+        val json = """[[0,1,"page","bad\q"],[1,2,"bold",{"k":[1,2]}],[2,4,"italic"],[5,6,"bold",""]]"""
+        assertEquals(listOf(Mark(2, 4, Style.ITALIC)), MarksCodec.decode(json))
+        assertEquals(emptyList<Mark>(), MarksCodec.decode("""[[0,1,"page","unclosed"""))
+    }
+
+    @Test
+    fun decodeUnescapesUnicodeEscapes() {
+        assertEquals(
+            listOf(Mark(0, 2, Style.PAGE, "A\u002C\u4EAC")),
+            MarksCodec.decode("""[[0,2,"page","A\u002c\u4eac"]]"""),
+        )
+    }
 }

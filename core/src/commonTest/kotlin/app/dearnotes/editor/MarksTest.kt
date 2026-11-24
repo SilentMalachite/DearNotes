@@ -76,6 +76,14 @@ class MarksTest {
     @Test
     fun pageNeedsTargetAndOtherStylesMustNotHaveOne() {
         assertFailsWith<IllegalArgumentException> { Mark(0, 1, PAGE) }
+        assertFailsWith<IllegalArgumentException> { Mark(0, 1, PAGE, "") }
+        assertFailsWith<IllegalArgumentException> { Mark(0, 1, PAGE, "  ") }
+        assertFailsWith<IllegalArgumentException> { Mark(0, 1, PAGE, "\u00A0") }
         assertFailsWith<IllegalArgumentException> { Mark(0, 1, BOLD, "x") }
+        assertFailsWith<IllegalArgumentException> { Mark(0, 1, BOLD, "") }
+        assertFailsWith<IllegalArgumentException> { Mark(0, 1, BOLD, "  ") }
+        assertFailsWith<IllegalArgumentException> { Mark(0, 1, LINK, "") }
+        assertEquals(null, Mark(0, 1, BOLD, null).target)
+        assertEquals("p", Mark(0, 1, PAGE, "p").target)
     }
 }

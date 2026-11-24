@@ -11,8 +11,9 @@ internal object Inline {
 
     /** 装飾の外で \ を付ける記号。 */
     private const val SPECIAL = "\\`*_~[]<>"
+    private const val HEX = "0123456789ABCDEF"
 
-    private val SCHEME = Regex("""[A-Za-z][A-Za-z0-9+.-]{1,31}:[^\s<>]*""")
+    private val SCHEME = Regex("""[A-Za-z][A-Za-z0-9+.-]{1,31}:[^\u0000-\u0020\u007F\s<>]*""")
     private val HEADING = Regex("""#{1,6}(\s.*)?""")
     private val BULLET = Regex("""[-+](\s.*)?""")
     private val NUMBER = Regex("""(\d{1,9})([.)])(\s.*)?""")
@@ -292,7 +293,7 @@ internal object Inline {
 
     private fun markerChar(s: Style): Char = if (s == Style.STRIKE) '~' else '*'
 
-    /** 中の ` より長い ` で囲む。改行は CommonMark に合わせて空白にし、端が ` か空白なら空白を1つずつ足す。 */
+    /** 中の ` より長い ` で囲む。改行は CommonMark に合わせて空白にし、端が ` か（全空白でないときの）空白なら空白を1つずつ足す。 */
     private fun code(s: String): String {
         val flat = s.replace("\r\n", " ").replace('\r', ' ').replace('\n', ' ')
         var longest = 0
@@ -307,11 +308,26 @@ internal object Inline {
         return if (pad) fence + " " + flat + " " + fence else fence + flat + fence
     }
 
-    /** スキームがあれば <url>。なければ [文字](文字)。 */
+    /** スキームがあれば <url>。なければ [文字](URL)。リンク先が壊れる文字はエンコード・エスケープする。 */
     private fun link(s: String): String {
         if (SCHEME.matches(s)) return "<$s>"
-        val target = s.replace("(", "%28").replace(")", "%29").replace(" ", "%20")
-            .replace("\r", "%0D").replace("\n", "%0A").replace("\t", "%09")
+        val target = StringBuilder(s.length)
+        for (i in s.indices) {
+            val c = s[i]
+            when {
+                c == '(' -> target.append("%28")
+                c == ')' -> target.append("%29")
+                c == ' ' -> target.append("%20")
+                c == '<' -> target.append("%3C")
+                c == '>' -> target.append("%3E")
+                c == '\\' -> target.append("%5C")
+                c == '&' && ENTITY.matchesAt(s, i) -> target.append("\\&")
+                c.code in 0x00..0x1F || c.code == 0x7F -> {
+                    target.append('%').append(HEX[c.code ushr 4]).append(HEX[c.code and 0xF])
+                }
+                else -> target.append(c)
+            }
+        }
         return "[" + escape(s) + "](" + target + ")"
     }
 

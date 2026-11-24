@@ -20,8 +20,9 @@ object BlockOps {
         return n
     }
 
-    /** index の直後に入れるキー。間がなければ null（全体を振り直す）。 */
+    /** index の直後に入れるキー。index は -1（先頭の前）から末尾まで。間がなければ null（全体を振り直す）。 */
     fun keyAfter(blocks: List<Block>, index: Int): Double? {
+        require(index in -1 until blocks.size) { "index out of range: $index (size=${blocks.size})" }
         val prev = if (index >= 0) blocks[index].sortKey else null
         val next = if (index + 1 < blocks.size) blocks[index + 1].sortKey else null
         return SortKeys.between(prev, next)
@@ -32,16 +33,20 @@ object BlockOps {
      * 間に収まらなければ null（全体を振り直す）。
      */
     fun keysForMove(blocks: List<Block>, from: Int, count: Int, insertAt: Int): List<Double>? {
+        require(from >= 0 && count >= 0 && from <= blocks.size - count) {
+            "bad range: from=$from, count=$count, size=${blocks.size}"
+        }
         val rest = ArrayList(blocks)
         rest.subList(from, from + count).clear()
         val target = insertAt.coerceIn(0, rest.size)
         val lo = if (target > 0) rest[target - 1].sortKey else 0.0
         val hi = if (target < rest.size) rest[target].sortKey else lo + SortKeys.GAP * (count + 1)
+        if (!lo.isFinite() || !hi.isFinite()) return null
         val keys = ArrayList<Double>(count)
         var prev = lo
         for (i in 0 until count) {
             val k = lo + (hi - lo) * (i + 1) / (count + 1)
-            if (k <= prev || k >= hi) return null
+            if (!k.isFinite() || !(k > prev && k < hi)) return null
             keys.add(k)
             prev = k
         }

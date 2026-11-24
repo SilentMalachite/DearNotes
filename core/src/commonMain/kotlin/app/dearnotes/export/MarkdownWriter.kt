@@ -17,8 +17,8 @@ import kotlin.math.max
  */
 object MarkdownWriter {
 
-    /** 見出しの末尾の # は、閉じの記号と読まれる。 */
-    private val CLOSING_HASHES = Regex("""(.*\s)(#+\s*)""")
+    /** 見出しの末尾（または行頭からのみ）の # は、閉じの記号と読まれる。 */
+    private val CLOSING_HASHES = Regex("""(.*\s)?(#+\s*)""")
 
     fun write(page: Page, blocks: List<Block>): String = write(page, blocks, Links.NONE)
 

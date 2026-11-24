@@ -7,6 +7,7 @@ import app.dearnotes.model.BlockType.PARAGRAPH
 import kotlin.math.nextUp
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertNull
 
 class BlockOpsTest {
@@ -58,5 +59,26 @@ class BlockOpsTest {
     fun keysForMoveReturnsNullWhenNoRoom() {
         val list = listOf(b(PARAGRAPH, 0, 1.0), b(PARAGRAPH, 0, 1.0.nextUp()), b(PARAGRAPH, 0, 5.0))
         assertNull(BlockOps.keysForMove(list, 2, 1, 1))
+    }
+
+    @Test
+    fun keyAfterValidatesIndexRange() {
+        val list = listOf(b(PARAGRAPH, 0, 1024.0), b(PARAGRAPH, 0, 2048.0))
+        assertEquals(512.0, BlockOps.keyAfter(emptyList(), -1))
+        assertFailsWith<IllegalArgumentException> { BlockOps.keyAfter(list, -2) }
+        assertFailsWith<IllegalArgumentException> { BlockOps.keyAfter(list, 2) }
+        assertFailsWith<IllegalArgumentException> { BlockOps.keyAfter(emptyList(), 0) }
+    }
+
+    @Test
+    fun keysForMoveReturnsNullForNonFiniteKeys() {
+        val nanList = listOf(b(PARAGRAPH, 0, Double.NaN), b(PARAGRAPH, 0, 1024.0), b(PARAGRAPH, 0, 2048.0))
+        assertNull(BlockOps.keysForMove(nanList, 2, 1, 1))
+        val infList = listOf(
+            b(PARAGRAPH, 0, 1024.0),
+            b(PARAGRAPH, 0, Double.POSITIVE_INFINITY),
+            b(PARAGRAPH, 0, 2048.0),
+        )
+        assertNull(BlockOps.keysForMove(infList, 2, 1, 1))
     }
 }

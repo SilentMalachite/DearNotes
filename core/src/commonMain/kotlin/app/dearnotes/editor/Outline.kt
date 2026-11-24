@@ -77,8 +77,10 @@ object Outline {
 
     /** index の行が入っている節の見出しの位置。前に見出しがなければ -1。 */
     fun currentHeading(blocks: List<Block>, index: Int): Int {
-        for (i in min(index, blocks.size - 1) downTo 0) {
-            if (level(blocks[i].type) > 0) return i
+        val target = min(index, blocks.size - 1)
+        if (target < 0) return -1
+        for (i in target downTo 0) {
+            if (level(blocks[i].type) > 0 && end(blocks, i) > target) return i
         }
         return -1
     }

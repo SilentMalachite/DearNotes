@@ -232,6 +232,16 @@ internal class InlineTest {
     }
 
     @Test
+    fun codeOfOnlySpacesIsNotPadded() {
+        assertEquals("` `", Inline.write(" ", listOf(Mark(0, 1, CODE))))
+        assertEquals("`  `", Inline.write("  ", listOf(Mark(0, 2, CODE))))
+        assertEquals("`   `", Inline.write("   ", listOf(Mark(0, 3, CODE))))
+        assertEquals("`  a  `", Inline.write(" a ", listOf(Mark(0, 3, CODE))))
+        assertEquals("`  a `", Inline.write(" a", listOf(Mark(0, 2, CODE))))
+        assertEquals("` a  `", Inline.write("a ", listOf(Mark(0, 2, CODE))))
+    }
+
+    @Test
     fun linkEncodesNewlinesAndTabsInDestination() {
         assertEquals(
             "[example.com/a\nb](example.com/a%0Ab)",
@@ -240,6 +250,34 @@ internal class InlineTest {
         assertEquals(
             "[https://example.com/a\nb](https://example.com/a%0Ab)",
             Inline.write("https://example.com/a\nb", listOf(Mark(0, 23, LINK))),
+        )
+    }
+
+    @Test
+    fun linkEscapesUnsafeCharactersAndControlCharsInDestination() {
+        assertEquals(
+            "[example.com/a\\<b\\>c](example.com/a%3Cb%3Ec)",
+            Inline.write("example.com/a<b>c", listOf(Mark(0, 17, LINK))),
+        )
+        assertEquals(
+            "[example.com/a\\\\b](example.com/a%5Cb)",
+            Inline.write("example.com/a\\b", listOf(Mark(0, 15, LINK))),
+        )
+        assertEquals(
+            "[example.com/?a=1\\&copy;b=2](example.com/?a=1\\&copy;b=2)",
+            Inline.write("example.com/?a=1&copy;b=2", listOf(Mark(0, 25, LINK))),
+        )
+        assertEquals(
+            "[example.com/?a=1&b=2](example.com/?a=1&b=2)",
+            Inline.write("example.com/?a=1&b=2", listOf(Mark(0, 20, LINK))),
+        )
+        assertEquals(
+            "[https://example.com/a\u0007b](https://example.com/a%07b)",
+            Inline.write("https://example.com/a\u0007b", listOf(Mark(0, 23, LINK))),
+        )
+        assertEquals(
+            "[https://example.com/a\\<b\\>](https://example.com/a%3Cb%3E)",
+            Inline.write("https://example.com/a<b>", listOf(Mark(0, 24, LINK))),
         )
     }
 }

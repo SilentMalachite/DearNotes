@@ -4,12 +4,13 @@ package app.dearnotes.model
 object SortKeys {
     const val GAP = 1024.0
 
-    /** prev と next の間に入れる。間が狭すぎたら null。 */
+    /** prev と next の間に入れる。間が狭すぎたり有限でない値なら null。 */
     fun between(prev: Double?, next: Double?): Double? {
         val lo = prev ?: 0.0
         val hi = next ?: (lo + GAP)
+        if (!lo.isFinite() || !hi.isFinite()) return null
         val mid = (lo + hi) / 2
-        return if (mid <= lo || mid >= hi) null else mid
+        return if (!mid.isFinite() || !(mid > lo && mid < hi)) null else mid
     }
 
     /** null のとき: 全体を GAP 間隔で振り直すためのキー。 */

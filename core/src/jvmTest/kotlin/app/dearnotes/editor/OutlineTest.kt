@@ -133,4 +133,30 @@ class OutlineTest {
         assertEquals(3, Outline.currentHeading(trip, 3))
         assertEquals(-1, Outline.currentHeading(listOf(b(PARAGRAPH, 0, "前書き")), 0))
     }
+
+    @Test
+    fun currentHeadingRespectsIndentedHeadingSectionEnd() {
+        val withoutOuter = listOf(
+            b(BULLET, 0, "旅の記録"),
+            b(H3, 1, "午前"),
+            b(PARAGRAPH, 1, "伏見稲荷"),
+            b(PARAGRAPH, 2, "千本鳥居"),
+            b(PARAGRAPH, 0, "おわり"),
+            b(PARAGRAPH, 1, "あとがき"),
+        )
+        assertEquals(1, Outline.currentHeading(withoutOuter, 1))
+        assertEquals(1, Outline.currentHeading(withoutOuter, 3))
+        assertEquals(-1, Outline.currentHeading(withoutOuter, 4))
+        assertEquals(-1, Outline.currentHeading(withoutOuter, 5))
+
+        val withOuter = listOf(
+            b(H1, 0, "京都旅行"),
+            b(BULLET, 0, "旅の記録"),
+            b(H3, 1, "午前"),
+            b(PARAGRAPH, 1, "伏見稲荷"),
+            b(PARAGRAPH, 0, "おわり"),
+        )
+        assertEquals(2, Outline.currentHeading(withOuter, 3))
+        assertEquals(0, Outline.currentHeading(withOuter, 4))
+    }
 }

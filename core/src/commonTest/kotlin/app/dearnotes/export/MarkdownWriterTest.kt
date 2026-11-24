@@ -70,8 +70,31 @@ internal class MarkdownWriterTest {
             MarkdownWriter.write(Page("p", null, "###", null, null, 0.0, 0L, 0L, null), emptyList()),
         )
         assertEquals(
+            "# \\#######\n",
+            MarkdownWriter.write(Page("p", null, "#######", null, null, 0.0, 0L, 0L, null), emptyList()),
+        )
+        assertEquals(
             "# Done \\#\n",
             MarkdownWriter.write(Page("p", null, "Done #", null, null, 0.0, 0L, 0L, null), emptyList()),
+        )
+    }
+
+    @Test
+    fun headingConsistingOfSevenOrMoreHashesIsEscaped() {
+        add(H1, "#######", 0)
+        add(H2, "########  ", 0)
+        add(H3, "####### 本文", 0)
+        assertEquals(
+            """
+            # 京都
+
+            # \#######
+
+            ## \########  
+
+            ### ####### 本文
+            """.trimIndent() + "\n",
+            write(),
         )
     }
 
