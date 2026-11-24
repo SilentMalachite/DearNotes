@@ -33,4 +33,13 @@ class PageLinksTest {
         assertNull(PageLinks.queryAt("[京", 2))
         assertNull(PageLinks.queryAt("", 0))
     }
+
+    @Test
+    fun trailingNewlineClosesQuery() {
+        assertNull(PageLinks.queryAt("[[京都\n", 5))
+        assertNull(PageLinks.queryAt("[[\n", 3))
+        assertNull(PageLinks.queryAt("「「京都\n", 5))
+        assertNull(PageLinks.queryAt("[[京都\r\n", 6))
+        assertEquals(PageLinks.Query(4, "b"), PageLinks.queryAt("[[a\n[[b", 7))
+    }
 }

@@ -22,15 +22,16 @@ object PasteParser {
             val line = raw[i]
             val body = line.stripLeading()
             val indent = indentOf(line)
-            if (body.startsWith("```")) {
+            val fenceLen = openingFenceLength(body)
+            if (fenceLen > 0) {
                 val code = ArrayList<String>()
                 var j = i + 1
-                while (j < raw.size && !raw[j].stripLeading().startsWith("```")) {
+                while (j < raw.size && !isClosingFence(raw[j].stripLeading(), fenceLen)) {
                     code.add(raw[j])
                     j++
                 }
                 out.add(Line(BlockType.CODE, code.joinToString("\n"), indent, false))
-                i = j // 閉じの ``` を飛ばす（なければ末尾まで）
+                i = j // 閉じフェンスを飛ばす（なければ末尾まで）
                 i++
                 continue
             }
@@ -63,6 +64,26 @@ object PasteParser {
             }
         }
         return Line(BlockType.PARAGRAPH, body, indent, false)
+    }
+
+    /** CommonMark §4.5 の開きフェンス（3個以上の ` で始まり、情報文字列に ` を含まない）なら ` の個数、そうでなければ 0。 */
+    private fun openingFenceLength(body: String): Int {
+        var n = 0
+        while (n < body.length && body[n] == '`') n++
+        if (n < 3) return 0
+        return if (body.indexOf('`', n) < 0) n else 0
+    }
+
+    /** CommonMark §4.5 の閉じフェンス（fenceLen 個以上の ` と、後ろにスペース・タブのみ）か。 */
+    private fun isClosingFence(body: String, fenceLen: Int): Boolean {
+        var n = 0
+        while (n < body.length && body[n] == '`') n++
+        if (n < fenceLen) return false
+        for (k in n until body.length) {
+            val c = body[k]
+            if (c != ' ' && c != '\t') return false
+        }
+        return true
     }
 
     /** タブ1つか空白2つで1段。 */

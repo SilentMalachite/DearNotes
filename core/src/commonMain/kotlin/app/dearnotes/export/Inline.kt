@@ -292,23 +292,26 @@ internal object Inline {
 
     private fun markerChar(s: Style): Char = if (s == Style.STRIKE) '~' else '*'
 
-    /** 中の ` より長い ` で囲む。端が ` か空白なら、空白を1つずつ足す。 */
+    /** 中の ` より長い ` で囲む。改行は CommonMark に合わせて空白にし、端が ` か空白なら空白を1つずつ足す。 */
     private fun code(s: String): String {
+        val flat = s.replace("\r\n", " ").replace('\r', ' ').replace('\n', ' ')
         var longest = 0
         var run = 0
-        for (c in s) {
+        for (c in flat) {
             run = if (c == '`') run + 1 else 0
             longest = max(longest, run)
         }
         val fence = "`".repeat(longest + 1)
-        val pad = s.startsWith("`") || s.endsWith("`") || s.startsWith(" ") || s.endsWith(" ")
-        return if (pad) fence + " " + s + " " + fence else fence + s + fence
+        val edgeSpace = (flat.startsWith(" ") || flat.endsWith(" ")) && flat.any { it != ' ' }
+        val pad = flat.startsWith("`") || flat.endsWith("`") || edgeSpace
+        return if (pad) fence + " " + flat + " " + fence else fence + flat + fence
     }
 
     /** スキームがあれば <url>。なければ [文字](文字)。 */
     private fun link(s: String): String {
         if (SCHEME.matches(s)) return "<$s>"
         val target = s.replace("(", "%28").replace(")", "%29").replace(" ", "%20")
+            .replace("\r", "%0D").replace("\n", "%0A").replace("\t", "%09")
         return "[" + escape(s) + "](" + target + ")"
     }
 

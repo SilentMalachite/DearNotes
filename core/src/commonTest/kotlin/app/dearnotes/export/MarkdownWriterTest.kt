@@ -327,6 +327,75 @@ internal class MarkdownWriterTest {
         assertEquals("# 京都\n\n# 節\n\n隠れた行\n", write())
     }
 
+    @Test
+    fun inlineCodeAcrossLineBreaksDoesNotLeakBackslash() {
+        add(PARAGRAPH, "foo\nbar", 0, false, listOf(Mark(0, 7, Mark.Style.CODE)))
+        add(PARAGRAPH, "foo\n# bar", 0, false, listOf(Mark(0, 9, Mark.Style.CODE)))
+        add(QUOTE, "a\n- b", 0, false, listOf(Mark(0, 5, Mark.Style.CODE)))
+        assertEquals(
+            """
+            # 京都
+
+            `foo`\
+            `bar`
+
+            `foo`\
+            `# bar`
+
+            > `a`\
+            > `- b`
+            """.trimIndent() + "\n",
+            write(),
+        )
+    }
+
+    @Test
+    fun linksAcrossLineBreaksStayValidWithAndWithoutScheme() {
+        add(PARAGRAPH, "example.com/a\nb", 0, false, listOf(Mark(0, 15, Mark.Style.LINK)))
+        add(
+            PARAGRAPH,
+            "https://example.com\nhttps://example.org",
+            0,
+            false,
+            listOf(Mark(0, 39, Mark.Style.LINK)),
+        )
+        add(PARAGRAPH, "https://example.com/a\nb", 0, false, listOf(Mark(0, 23, Mark.Style.LINK)))
+        assertEquals(
+            """
+            # 京都
+
+            [example.com/a](example.com/a)\
+            [b](b)
+
+            <https://example.com>\
+            <https://example.org>
+
+            <https://example.com/a>\
+            [b](b)
+            """.trimIndent() + "\n",
+            write(),
+        )
+    }
+
+    @Test
+    fun headingCodeAndLinkAcrossLineBreaksStayValid() {
+        add(H2, "foo\nbar", 0, false, listOf(Mark(0, 7, Mark.Style.CODE)))
+        add(H2, "example.com/a\nb", 0, false, listOf(Mark(0, 15, Mark.Style.LINK)))
+        add(H2, "https://example.com/a\nb", 0, false, listOf(Mark(0, 23, Mark.Style.LINK)))
+        assertEquals(
+            """
+            # 京都
+
+            ## `foo bar`
+
+            ## [example.com/a b](example.com/a%0Ab)
+
+            ## [https://example.com/a b](https://example.com/a%0Ab)
+            """.trimIndent() + "\n",
+            write(),
+        )
+    }
+
     companion object {
         private val PAGE = Page("p", null, "京都", null, null, 0.0, 0L, 0L, null)
     }

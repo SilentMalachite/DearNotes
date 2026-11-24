@@ -5,6 +5,7 @@ import app.dearnotes.strip
 import app.dearnotes.stripTrailing
 
 import app.dearnotes.editor.BlockOps
+import app.dearnotes.editor.Marks
 import app.dearnotes.model.Block
 import app.dearnotes.model.BlockType
 import app.dearnotes.model.Page
@@ -85,7 +86,7 @@ object MarkdownWriter {
         return out.toString()
     }
 
-    /** 文字のあるブロック。2行目からは continuation を前に付け、行末の \ で改行する。 */
+    /** 文字のあるブロック。行ごとに装飾を切り出して書き、2行目からは continuation を付け、行末の \ で改行する。 */
     private fun text(
         out: StringBuilder,
         pad: String,
@@ -94,14 +95,24 @@ object MarkdownWriter {
         b: Block,
         links: Links,
     ) {
-        val lines = trimNewlines(Inline.write(b.text, b.marks, links)).split("\n")
-        for (j in lines.indices) {
-            val lead = pad + if (j == 0) marker else continuation
-            if (j == lines.size - 1) {
-                content(out, lead, lines[j])
-            } else {
-                line(out, lead + Inline.escapeLineStart(lines[j]) + "\\")
+        val start = leadingNewlines(b.text)
+        val end = trailingNewlines(b.text, start)
+        var pos = start
+        var lineIndex = 0
+        while (true) {
+            val found = b.text.indexOf('\n', pos)
+            val nl = if (found < 0 || found >= end) end else found
+            val lineText = b.text.substring(pos, nl)
+            val lineMarks = sliceMarks(b, pos, nl)
+            val rendered = Inline.write(lineText, lineMarks, links)
+            val lead = pad + if (lineIndex == 0) marker else continuation
+            if (nl == end) {
+                content(out, lead, rendered)
+                break
             }
+            line(out, lead + Inline.escapeLineStart(rendered) + "\\")
+            pos = nl + 1
+            lineIndex++
         }
     }
 
@@ -122,10 +133,14 @@ object MarkdownWriter {
     }
 
     private fun heading(out: StringBuilder, pad: String, marker: String, b: Block, links: Links) {
+        val start = leadingNewlines(b.text)
+        val end = trailingNewlines(b.text, start)
+        val body = b.text.substring(start, end)
+        val marks = sliceMarks(b, start, end)
         headingBody(
             out,
             pad + marker,
-            trimNewlines(Inline.write(b.text, b.marks, links)).replace('\n', ' '),
+            Inline.write(body, marks, links).replace('\n', ' '),
         )
     }
 
@@ -162,11 +177,21 @@ object MarkdownWriter {
         out.append(s).append('\n')
     }
 
-    private fun trimNewlines(s: String): String {
-        var start = 0
+    private fun sliceMarks(b: Block, start: Int, end: Int) = when {
+        b.marks.isEmpty() -> emptyList()
+        start == 0 && end == b.text.length -> b.marks
+        else -> Marks.slice(b.marks, start, end)
+    }
+
+    private fun leadingNewlines(s: String): Int {
+        var i = 0
+        while (i < s.length && s[i] == '\n') i++
+        return i
+    }
+
+    private fun trailingNewlines(s: String, start: Int): Int {
         var end = s.length
-        while (start < end && s[start] == '\n') start++
         while (end > start && s[end - 1] == '\n') end--
-        return s.substring(start, end)
+        return end
     }
 }

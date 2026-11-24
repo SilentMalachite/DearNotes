@@ -223,4 +223,23 @@ internal class InlineTest {
     fun boldAndItalicRuleOfThreeKeepsOutput() {
         assertEquals("***a*bc**", Inline.write("abc", listOf(Mark(0, 3, BOLD), Mark(0, 1, ITALIC))))
     }
+
+    @Test
+    fun codeNormalizesLineBreaksToSpaces() {
+        assertEquals("`foo bar`", Inline.write("foo\nbar", listOf(Mark(0, 7, CODE))))
+        assertEquals("`  foo `", Inline.write("\nfoo", listOf(Mark(0, 4, CODE))))
+        assertEquals("` `", Inline.write("\n", listOf(Mark(0, 1, CODE))))
+    }
+
+    @Test
+    fun linkEncodesNewlinesAndTabsInDestination() {
+        assertEquals(
+            "[example.com/a\nb](example.com/a%0Ab)",
+            Inline.write("example.com/a\nb", listOf(Mark(0, 15, LINK))),
+        )
+        assertEquals(
+            "[https://example.com/a\nb](https://example.com/a%0Ab)",
+            Inline.write("https://example.com/a\nb", listOf(Mark(0, 23, LINK))),
+        )
+    }
 }

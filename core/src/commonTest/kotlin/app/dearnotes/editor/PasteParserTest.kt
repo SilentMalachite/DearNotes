@@ -1,5 +1,7 @@
 package app.dearnotes.editor
 
+import app.dearnotes.export.MarkdownWriter
+import app.dearnotes.model.Block
 import app.dearnotes.model.BlockType.BULLET
 import app.dearnotes.model.BlockType.CODE
 import app.dearnotes.model.BlockType.DIVIDER
@@ -8,6 +10,7 @@ import app.dearnotes.model.BlockType.NUMBERED
 import app.dearnotes.model.BlockType.PARAGRAPH
 import app.dearnotes.model.BlockType.QUOTE
 import app.dearnotes.model.BlockType.TODO
+import app.dearnotes.model.Page
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
@@ -58,5 +61,55 @@ class PasteParserTest {
     @Test
     fun unclosedFenceRunsToEnd() {
         assertEquals(listOf(PasteParser.Line(CODE, "x\ny", 0, false)), PasteParser.parse("```\nx\ny"))
+    }
+
+    @Test
+    fun fourBacktickFenceKeepsInnerTripleBackticks() {
+        val md = "````\n```\nx\n```\n````\n後"
+        assertEquals(
+            listOf(
+                PasteParser.Line(CODE, "```\nx\n```", 0, false),
+                PasteParser.Line(PARAGRAPH, "後", 0, false),
+            ),
+            PasteParser.parse(md),
+        )
+    }
+
+    @Test
+    fun fourBacktickFenceRoundTripsWithMarkdownWriter() {
+        val page = Page("p", null, "京都", null, null, 0.0, 0L, 0L, null)
+        val block = Block("b0", "p", CODE, "```\nx\n```", emptyList(), false, 0, 0.0, false)
+        val written = MarkdownWriter.write(page, listOf(block))
+        assertEquals(
+            listOf(
+                PasteParser.Line(H1, "京都", 0, false),
+                PasteParser.Line(CODE, "```\nx\n```", 0, false),
+            ),
+            PasteParser.parse(written),
+        )
+    }
+
+    @Test
+    fun closingFenceRequiresMatchingLengthAndOnlyTrailingSpacesOrTabs() {
+        val md = "```\nx\n``` 末尾文字あり\n```` \t \n後"
+        assertEquals(
+            listOf(
+                PasteParser.Line(CODE, "x\n``` 末尾文字あり", 0, false),
+                PasteParser.Line(PARAGRAPH, "後", 0, false),
+            ),
+            PasteParser.parse(md),
+        )
+    }
+
+    @Test
+    fun paragraphStartingWithInlineCodeIsNotACodeFence() {
+        val md = "```foo``` は例\n次の段落"
+        assertEquals(
+            listOf(
+                PasteParser.Line(PARAGRAPH, "```foo``` は例", 0, false),
+                PasteParser.Line(PARAGRAPH, "次の段落", 0, false),
+            ),
+            PasteParser.parse(md),
+        )
     }
 }
