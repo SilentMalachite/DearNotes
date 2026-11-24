@@ -1,4 +1,4 @@
-import org.gradle.internal.os.OperatingSystem
+import java.util.Locale
 
 plugins {
     application
@@ -14,11 +14,14 @@ val javafxVersion = "25.0.4"
 // Windows のアップグレードで同じ製品と見なすための固定 ID。変えないこと。
 val winUpgradeUuid = "5f0c7c2e-3b7a-4d4e-9a63-2a1d8e6b9c41"
 
-val os: OperatingSystem = OperatingSystem.current()
+// Gradle 内部 API を使わず標準のシステムプロパティから OS を判定する
+val osName: String = System.getProperty("os.name").lowercase(Locale.ROOT)
+val isMacOs: Boolean = osName.contains("mac") || osName.contains("darwin")
+val isWindows: Boolean = osName.startsWith("windows")
 val arch: String = System.getProperty("os.arch")
 val javafxPlatform = when {
-    os.isMacOsX -> if (arch == "aarch64") "mac-aarch64" else "mac"
-    os.isWindows -> "win"
+    isMacOs -> if (arch == "aarch64") "mac-aarch64" else "mac"
+    isWindows -> "win"
     else -> if (arch == "aarch64") "linux-aarch64" else "linux"
 }
 
@@ -86,7 +89,7 @@ val toolchainVersion: Provider<String> = javaToolchains
     .map { "${it.metadata.vendor}:${it.metadata.jvmVersion}" }
 
 fun jdkTool(name: String): String {
-    val exe = if (os.isWindows) "$name.exe" else name
+    val exe = if (isWindows) "$name.exe" else name
     return "${toolchainHome.get()}/bin/$exe"
 }
 
@@ -145,11 +148,11 @@ tasks.register<Exec>("jpackage") {
         "--java-options", "--enable-native-access=ALL-UNNAMED",
         "--java-options", "-Dfile.encoding=UTF-8",
     )
-    if (os.isMacOsX) {
+    if (isMacOs) {
         args += listOf("--type", "dmg", "--mac-package-identifier", "app.dearnotes")
         file("packaging/mac/DearNotes.icns").takeIf { it.exists() }
             ?.let { args += listOf("--icon", it.absolutePath) }
-    } else if (os.isWindows) {
+    } else if (isWindows) {
         args += listOf(
             "--type", "msi", "--win-menu", "--win-shortcut", "--win-dir-chooser",
             "--win-per-user-install", "--win-upgrade-uuid", winUpgradeUuid,

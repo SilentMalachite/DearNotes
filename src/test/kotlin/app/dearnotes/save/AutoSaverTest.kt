@@ -5,8 +5,15 @@ import app.dearnotes.model.BlockType
 import java.io.IOException
 import java.sql.SQLException
 import java.util.ArrayList
+import java.util.concurrent.AbstractExecutorService
+import java.util.concurrent.Callable
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Delayed
+import java.util.concurrent.FutureTask
+import java.util.concurrent.RejectedExecutionException
+import java.util.concurrent.ScheduledExecutorService
+import java.util.concurrent.ScheduledFuture
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 import org.junit.jupiter.api.AfterEach
@@ -48,6 +55,82 @@ internal class AutoSaverTest {
         saver?.close()
     }
 
+    /** 遅延タスクの実行タイミングをテスト側から決定論的に制御するスケジューラ。 */
+    private class ManualScheduler : AbstractExecutorService(), ScheduledExecutorService {
+        private class ManualScheduledFuture(command: Runnable) :
+            FutureTask<Unit>(command, Unit),
+            ScheduledFuture<Unit> {
+            override fun getDelay(unit: TimeUnit): Long = 0L
+            override fun compareTo(other: Delayed): Int = 0
+        }
+
+        private val queue = ArrayDeque<ManualScheduledFuture>()
+        private var shutdown = false
+
+        fun activeScheduledCount(): Int = queue.count { !it.isCancelled && !it.isDone }
+
+        fun runNext() {
+            while (queue.isNotEmpty()) {
+                val next = queue.removeFirst()
+                if (!next.isCancelled) {
+                    next.run()
+                    return
+                }
+            }
+            fail<Nothing>("実行可能なスケジュール済みタスクがない")
+        }
+
+        override fun schedule(command: Runnable, delay: Long, unit: TimeUnit): ScheduledFuture<*> {
+            if (shutdown) throw RejectedExecutionException("shutdown")
+            val future = ManualScheduledFuture(command)
+            queue.addLast(future)
+            return future
+        }
+
+        override fun <V> schedule(callable: Callable<V>, delay: Long, unit: TimeUnit): ScheduledFuture<V> {
+            throw UnsupportedOperationException()
+        }
+
+        override fun scheduleAtFixedRate(
+            command: Runnable,
+            initialDelay: Long,
+            period: Long,
+            unit: TimeUnit,
+        ): ScheduledFuture<*> {
+            throw UnsupportedOperationException()
+        }
+
+        override fun scheduleWithFixedDelay(
+            command: Runnable,
+            initialDelay: Long,
+            delay: Long,
+            unit: TimeUnit,
+        ): ScheduledFuture<*> {
+            throw UnsupportedOperationException()
+        }
+
+        override fun shutdown() {
+            shutdown = true
+        }
+
+        override fun shutdownNow(): List<Runnable> {
+            shutdown = true
+            queue.clear()
+            return emptyList()
+        }
+
+        override fun isShutdown(): Boolean = shutdown
+
+        override fun isTerminated(): Boolean = shutdown
+
+        override fun awaitTermination(timeout: Long, unit: TimeUnit): Boolean = shutdown
+
+        override fun execute(command: Runnable) {
+            if (shutdown) throw RejectedExecutionException("shutdown")
+            command.run()
+        }
+    }
+
     private fun newSaver(delay: Long, retry: Long): AutoSaver {
         val created = AutoSaver(store, Runnable::run, delay, retry)
         saver = created
@@ -55,14 +138,24 @@ internal class AutoSaverTest {
         return created
     }
 
+    private fun newSaver(delay: Long, retry: Long, scheduler: ScheduledExecutorService): AutoSaver {
+        val created = AutoSaver(store, Runnable::run, delay, retry, scheduler)
+        saver = created
+        created.setListener { statuses.add(it) }
+        return created
+    }
+
     @Test
     fun batchesRapidEditsIntoOneWrite() {
-        val saver = newSaver(100L, 1000L)
+        val scheduler = ManualScheduler()
+        val saver = newSaver(500L, 5_000L, scheduler)
         val b = block("a")
         saver.changed(b)
         saver.changed(b.withContent("ab", emptyList()))
         saver.changed(b.withContent("abc", emptyList()))
-        waitUntil { saver.status() == SaveStatus.SAVED && !store.saves.isEmpty() }
+        // 直前のタイマーが取り消され、最新の1件だけが予約されていること
+        assertEquals(1, scheduler.activeScheduledCount())
+        scheduler.runNext()
         assertEquals(1, store.saves.size)
         assertEquals("abc", store.saves.first().first().text)
         assertEquals(
@@ -106,13 +199,16 @@ internal class AutoSaverTest {
 
     @Test
     fun retryDoesNotOverwriteNewerEdit() {
+        val scheduler = ManualScheduler()
         store.failuresLeft.set(1)
-        val saver = newSaver(10L, 200L)
+        val saver = newSaver(500L, 5_000L, scheduler)
         val b = block("古い")
         saver.changed(b)
-        waitUntil { saver.status() == SaveStatus.FAILED }
+        scheduler.runNext()
+        assertEquals(SaveStatus.FAILED, saver.status())
         saver.changed(b.withContent("新しい", emptyList()))
-        waitUntil { saver.status() == SaveStatus.SAVED }
+        scheduler.runNext()
+        assertEquals(SaveStatus.SAVED, saver.status())
         val written = ArrayList<String>()
         store.saves.forEach { batch -> batch.forEach { x -> written.add(x.text) } }
         assertEquals(listOf("新しい"), written)

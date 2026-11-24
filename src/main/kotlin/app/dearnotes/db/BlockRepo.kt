@@ -53,7 +53,7 @@ class BlockRepo(private val db: Database) : BlockStore {
 
     /**
      * target のページへのリンクを持つブロック。ゴミ箱のページと target 自身は入れない。
-     * marks の JSON を LIKE で探す。ページの id は UUID なので % と _ を含まない。
+     * marks の JSON から部分文字列一致（大小区別・ワイルドカード非解釈）で探す。
      */
     fun linksTo(target: String): List<Backlink> {
         return db.read { c ->
@@ -61,12 +61,12 @@ class BlockRepo(private val db: Database) : BlockStore {
                 """
                 SELECT p.id, p.title, p.icon, p.daily_date, b.id, b.text
                 FROM blocks b JOIN pages p ON p.id = b.page_id
-                WHERE b.marks LIKE ? AND p.deleted_at IS NULL AND p.id <> ?
+                WHERE instr(b.marks, ?) > 0 AND p.deleted_at IS NULL AND p.id <> ?
                 ORDER BY p.updated_at DESC, p.id, b.sort_key
                 LIMIT 50
                 """.trimIndent(),
             ).use { ps ->
-                ps.setString(1, "%\"page\",\"" + target + "\"]%")
+                ps.setString(1, "\"page\",\"$target\"]")
                 ps.setString(2, target)
                 ps.executeQuery().use { rs ->
                     val out = ArrayList<Backlink>()

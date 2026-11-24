@@ -63,9 +63,16 @@ internal class BlockRepoTest : DbTestBase() {
     @Test
     fun savingBlocksTouchesPage() {
         val p = pages.create(null, "x")
-        Thread.sleep(5)
+        // 実時間スリープを避けるため、保存前に古い updated_at を明示的に設定する
+        db.write { c ->
+            c.prepareStatement("UPDATE pages SET updated_at = ? WHERE id = ?").use { ps ->
+                ps.setLong(1, 1_000L)
+                ps.setString(2, p.id)
+                ps.executeUpdate()
+            }
+        }
         blocks.save(listOf(Block.empty(p.id, BlockType.PARAGRAPH, 1.0)), emptyList())
-        assertTrue((pages.get(p.id) ?: error("missing")).updatedAt > p.updatedAt)
+        assertTrue((pages.get(p.id) ?: error("missing")).updatedAt > 1_000L)
     }
 
     @Test
@@ -120,5 +127,21 @@ internal class BlockRepoTest : DbTestBase() {
         assertEquals("旅行", hits.first().pageTitle)
         assertEquals("次は京都へ", hits.first().text)
         assertEquals(emptyList<BlockRepo.Backlink>(), blocks.linksTo(trip.id))
+    }
+
+    @Test
+    fun linksToIsCaseSensitiveAndDoesNotTreatLikeWildcards() {
+        val source = pages.create(null, "参照元")
+        val exactBlock = Block.empty(source.id, BlockType.PARAGRAPH, 1.0)
+            .withContent("exact", listOf(Mark(0, 5, Mark.Style.PAGE, "Page_1")))
+        val similarBlock = Block.empty(source.id, BlockType.PARAGRAPH, 2.0)
+            .withContent("similar", listOf(Mark(0, 7, Mark.Style.PAGE, "Pagex1")))
+        blocks.save(listOf(exactBlock, similarBlock), emptyList())
+
+        // "_" をワイルドカード扱いせず、大小文字も区別すること
+        assertEquals(listOf(exactBlock.id), blocks.linksTo("Page_1").map { it.blockId })
+        assertEquals(emptyList<BlockRepo.Backlink>(), blocks.linksTo("page_1"))
+        assertEquals(emptyList<BlockRepo.Backlink>(), blocks.linksTo("Page%1"))
+        assertEquals(listOf(similarBlock.id), blocks.linksTo("Pagex1").map { it.blockId })
     }
 }

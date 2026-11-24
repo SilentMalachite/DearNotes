@@ -131,7 +131,7 @@ class PageRepo(private val db: Database) {
     }
 
     fun rename(id: String, title: String?) {
-        update("UPDATE pages SET title = ?, updated_at = ? WHERE id = ?", title, id)
+        update("UPDATE pages SET title = ?, updated_at = ? WHERE id = ?", title ?: "", id)
     }
 
     fun setIcon(id: String, icon: String?) {
@@ -199,7 +199,7 @@ class PageRepo(private val db: Database) {
                 """
                 WITH RECURSIVE sub(id) AS (
                   SELECT ?
-                  UNION ALL
+                  UNION
                   SELECT p.id FROM pages p JOIN sub ON p.parent_id = sub.id
                 )
                 UPDATE pages SET deleted_at = ? WHERE id IN sub AND deleted_at IS NULL
@@ -263,7 +263,7 @@ class PageRepo(private val db: Database) {
             """
             WITH RECURSIVE sub(id) AS (
               SELECT ?
-              UNION ALL
+              UNION
               SELECT p.id FROM pages p JOIN sub ON p.parent_id = sub.id
             )
             UPDATE pages SET deleted_at = NULL
@@ -294,7 +294,7 @@ class PageRepo(private val db: Database) {
         c.prepareStatement(
             """
             WITH RECURSIVE sub(id) AS (
-              SELECT ? UNION ALL SELECT p.id FROM pages p JOIN sub ON p.parent_id = sub.id
+              SELECT ? UNION SELECT p.id FROM pages p JOIN sub ON p.parent_id = sub.id
             ) SELECT id FROM sub
             """.trimIndent(),
         ).use { ps ->

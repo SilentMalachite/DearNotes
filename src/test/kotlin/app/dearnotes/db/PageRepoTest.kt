@@ -149,6 +149,35 @@ internal class PageRepoTest : DbTestBase() {
         val after = pages.get(p.id) ?: error("missing")
         assertEquals("読書メモ", after.title)
         assertEquals("📚", after.displayIcon())
+
+        // null を渡しても NOT NULL 制約違反にならず空文字として保存されること
+        pages.rename(p.id, null)
+        val cleared = pages.get(p.id) ?: error("missing")
+        assertEquals("", cleared.title)
+        assertEquals("無題", cleared.displayTitle())
+    }
+
+    @Test
+    fun cyclicParentDataDoesNotHangRecursiveQueries() {
+        val a = pages.create(null, "A")
+        val b = pages.create(a.id, "B")
+        // 外部要因で循環参照が生じたデータを模擬する
+        db.write { c ->
+            c.prepareStatement("UPDATE pages SET parent_id = ? WHERE id = ?").use { ps ->
+                ps.setString(1, b.id)
+                ps.setString(2, a.id)
+                ps.executeUpdate()
+            }
+        }
+
+        assertThrows(SQLException::class.java) { pages.move(a.id, b.id, 1.0) }
+        pages.trash(a.id, 1_000L)
+        assertTrue((pages.get(a.id) ?: error("missing")).isTrashed())
+        assertTrue((pages.get(b.id) ?: error("missing")).isTrashed())
+
+        pages.restore(a.id)
+        assertFalse((pages.get(a.id) ?: error("missing")).isTrashed())
+        assertFalse((pages.get(b.id) ?: error("missing")).isTrashed())
     }
 
     @Test
@@ -178,8 +207,18 @@ internal class PageRepoTest : DbTestBase() {
     @Test
     fun findByTitlePutsExactMatchBeforeTheLimit() {
         val kyoto = pages.create(null, "京都")
-        Thread.sleep(5)
-        pages.create(null, "京都メモ")
+        val memo = pages.create(null, "京都メモ")
+        // 実時間スリープに依存せず、前方一致側の updated_at を明示的に新しく設定する
+        db.write { c ->
+            c.prepareStatement("UPDATE pages SET updated_at = ? WHERE id = ?").use { ps ->
+                ps.setLong(1, 1_000L)
+                ps.setString(2, kyoto.id)
+                ps.executeUpdate()
+                ps.setLong(1, 2_000L)
+                ps.setString(2, memo.id)
+                ps.executeUpdate()
+            }
+        }
         assertEquals(listOf(kyoto.id), pages.findByTitle("京都", 1).map { it.id })
     }
 

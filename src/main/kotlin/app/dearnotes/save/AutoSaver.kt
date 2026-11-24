@@ -19,16 +19,13 @@ import java.util.logging.Logger
  * 変わったブロックを覚えておき、入力が止まってから1本の書き込みスレッドでまとめて書く。
  * changed / deleted は FX スレッドから、flushNow は db-writer スレッドで動く。
  */
-class AutoSaver(
+class AutoSaver internal constructor(
     private val store: BlockStore,
     private val ui: (Runnable) -> Unit,
     private val delayMillis: Long,
     private val retryMillis: Long,
+    private val writer: ScheduledExecutorService,
 ) : AutoCloseable {
-
-    private val writer: ScheduledExecutorService = Executors.newSingleThreadScheduledExecutor { r ->
-        Thread(r, "db-writer").apply { isDaemon = true }
-    }
 
     private val lock = Any()
     private val pending = LinkedHashMap<String, Block>()
@@ -43,6 +40,13 @@ class AutoSaver(
 
     @Volatile
     private var listener: Consumer<SaveStatus> = Consumer { }
+
+    constructor(
+        store: BlockStore,
+        ui: (Runnable) -> Unit,
+        delayMillis: Long,
+        retryMillis: Long,
+    ) : this(store, ui, delayMillis, retryMillis, defaultWriter())
 
     constructor(store: BlockStore, ui: (Runnable) -> Unit) : this(store, ui, 500L, 5_000L)
 
@@ -250,5 +254,11 @@ class AutoSaver(
         private val LOG: Logger = Logger.getLogger(AutoSaver::class.java.name)
         private const val CLOSE_TIMEOUT_SECONDS = 10L
         private const val TERMINATION_TIMEOUT_SECONDS = 5L
+
+        private fun defaultWriter(): ScheduledExecutorService {
+            return Executors.newSingleThreadScheduledExecutor { r ->
+                Thread(r, "db-writer").apply { isDaemon = true }
+            }
+        }
     }
 }
