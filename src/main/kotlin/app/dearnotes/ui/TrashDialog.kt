@@ -80,6 +80,10 @@ internal class TrashDialog(
         stage.show()
     }
 
+    internal fun hide() {
+        stage.hide()
+    }
+
     private fun reload() {
         val pages = Errors.get("ゴミ箱を読む") { s.pages.listTrash() } ?: emptyList()
         list.items.setAll(pages)

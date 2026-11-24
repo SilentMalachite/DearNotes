@@ -74,16 +74,22 @@ internal class SlashMenu(
             hide()
             return
         }
+        val b = v.caretBounds()
+        val window = v.scene?.window
+        // シーンやウィンドウが未接続・非表示のときは Popup.show を呼ばずに安全に閉じる
+        if (b == null || window == null || !window.isShowing) {
+            if (v == target) hide()
+            return
+        }
         target = v
         list.items.setAll(items)
         list.selectionModel.selectFirst()
         list.prefHeight = (Math.min(items.size, 10) * 28 + 4).toDouble()
-        val b = v.caretBounds() ?: return
         if (popup.isShowing) {
             popup.x = b.minX
             popup.y = b.maxY + 4
         } else {
-            popup.show(v.scene!!.window, b.minX, b.maxY + 4)
+            popup.show(window, b.minX, b.maxY + 4)
         }
     }
 

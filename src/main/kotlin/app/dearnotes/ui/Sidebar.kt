@@ -22,6 +22,7 @@ import javafx.scene.layout.VBox
 internal class Sidebar(
     private val s: Services,
     private val actions: Actions,
+    private val todayProvider: () -> LocalDate = LocalDate::now,
 ) : VBox() {
 
     /** 木の1行。見出し（ページ / デイリー）かページ。 */
@@ -47,6 +48,7 @@ internal class Sidebar(
     enum class Drop { BEFORE, INTO, AFTER }
 
     private val tree = TreeView<Entry>()
+    private val todayButton: Button
     private val pagesSection = TreeItem<Entry>(Section("ページ", false))
     private val dailySection = TreeItem<Entry>(Section("デイリー", true))
     private val expanded = HashSet<String>()
@@ -59,7 +61,10 @@ internal class Sidebar(
         styleClass.add("sidebar")
 
         val search = navButton("🔍  検索", actions::showSearch)
-        val today = navButton("📅  今日 · " + todayLabel(), actions::openToday)
+        todayButton = navButton(todayButtonText(todayProvider())) {
+            refreshTodayLabel()
+            actions.openToday()
+        }
         val newPage = navButton("＋  新しいページ") { actions.newPage(null) }
 
         val root = TreeItem<Entry>()
@@ -79,11 +84,19 @@ internal class Sidebar(
         VBox.setVgrow(tree, Priority.ALWAYS)
 
         val trash = navButton("🗑  ゴミ箱", actions::showTrash)
-        children.addAll(search, today, newPage, tree, trash)
+        children.addAll(search, todayButton, newPage, tree, trash)
     }
+
+    /** 「今日」ボタンの日付表示を現在日に更新する。 */
+    fun refreshTodayLabel() {
+        todayButton.text = todayButtonText(todayProvider())
+    }
+
+    internal fun todayButton(): Button = todayButton
 
     /** DB から読み直す。開いている枝と選択は残す。 */
     fun reload(selectedId: String?) {
+        refreshTodayLabel()
         rememberExpanded(pagesSection)
         rememberExpanded(dailySection)
         alive = Errors.get("ページの一覧を読む") { s.pages.listAlive() } ?: emptyList()
@@ -333,10 +346,8 @@ internal class Sidebar(
                 .map { it.sortKey }
                 .maxOrNull()
 
-        private fun todayLabel(): String {
-            val d = LocalDate.now()
-            return d.monthValue.toString() + "月" + d.dayOfMonth + "日"
-        }
+        internal fun todayButtonText(date: LocalDate): String =
+            "📅  今日 · " + date.monthValue + "月" + date.dayOfMonth + "日"
 
         internal fun keyFor(alive: List<Page>, parentId: String?, moving: Page, target: Page, where: Drop): Double? {
             val siblings = alive.asSequence()

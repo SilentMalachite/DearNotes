@@ -11,13 +11,17 @@ import app.dearnotes.model.Page
 import app.dearnotes.save.AutoSaver
 import java.nio.file.Path
 import java.sql.SQLException
+import java.time.LocalDate
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.TimeUnit
+import java.util.prefs.Preferences
 import javafx.application.Platform
 import javafx.scene.Node
+import javafx.scene.Scene
 import javafx.scene.control.Label
 import javafx.scene.control.ListCell
 import javafx.scene.control.TextField
+import javafx.scene.layout.VBox
 import javafx.scene.input.Clipboard
 import javafx.scene.input.ClipboardContent
 import javafx.scene.input.InputMethodEvent
@@ -113,11 +117,14 @@ class PageEditorUiTest {
     fun close() {
         fx {
             Errors.dismiss()
+            Errors.setOwner(null)
             stage.close()
             null
         }
         saver.close()
         db.close()
+        // テスト用 dataDir に対応する Preferences エントリを消去して残留・テスト間共有を防ぐ
+        Preferences.userNodeForPackage(MainWindow::class.java).remove(MainWindow.lastPageKey())
         System.clearProperty("dearnotes.dataDir")
     }
 
@@ -785,6 +792,10 @@ class PageEditorUiTest {
         }
         settle()
         assertEquals(listOf<String>(), opened)
+        fx {
+            dialog.hide()
+            null
+        }
     }
 
     @Test
@@ -1939,6 +1950,163 @@ class PageEditorUiTest {
             assertNull(Errors.activeAlert())
             Errors.warn("終了後", "表示されない")
             assertNull(Errors.activeAlert())
+            null
+        }
+    }
+
+    @Test
+    fun rapidPageSwitchingIgnoresStaleFocusRunLater() {
+        val pageA = pages.create(null, "ページA")
+        val block1 = Block.empty(pageA.id, BlockType.PARAGRAPH, 1024.0).withContent("行1", emptyList())
+        val block2 = Block.empty(pageA.id, BlockType.PARAGRAPH, 2048.0).withContent("行2", emptyList())
+        blocks.save(listOf(block1, block2), emptyList())
+        val pageB = pages.create(null, "ページB")
+        blocks.save(
+            listOf(Block.empty(pageB.id, BlockType.PARAGRAPH, 1024.0).withContent("B本文", emptyList())),
+            emptyList(),
+        )
+
+        // 同一パルス内で A(block1) -> B -> A(block2) と連続切替しても、古い runLater が block1 にフォーカスを奪わない
+        fx {
+            assertTrue(window.editor().open(pageA, block1.id))
+            assertTrue(window.editor().open(pageB, null))
+            assertTrue(window.editor().open(pageA, block2.id))
+            null
+        }
+        settle()
+        assertEquals(pageA.id, fx { window.editor().page()!!.id })
+        assertEquals(block2.id, fx { current().block().id })
+    }
+
+    @Test
+    fun slashAndPageLinkMenusGuardNullOrHiddenWindow() {
+        val dummyPage = pages.create(null, "ダミー")
+        val dummyBlock = Block.empty(dummyPage.id, BlockType.PARAGRAPH, 1024.0).withContent("/見", emptyList())
+        fx {
+            val slash = SlashMenu { _, _ -> }
+            val links = PageLinkMenu { _, _, _ -> }
+            val detached = BlockView(dummyBlock, window.editor())
+            try {
+                // シーン未接続（scene == null）でも例外を出さず表示しない
+                slash.update(detached, "見")
+                links.show(detached, 0, listOf(PageLinkMenu.Choice(dummyPage, "ダミー")))
+                assertFalse(slash.isShowing())
+                assertFalse(links.isShowing())
+
+                // シーンはあるが window == null の状態でも例外を出さず表示しない
+                Scene(VBox(detached), 300.0, 200.0)
+                slash.update(detached, "見")
+                links.show(detached, 0, listOf(PageLinkMenu.Choice(dummyPage, "ダミー")))
+                assertFalse(slash.isShowing())
+                assertFalse(links.isShowing())
+
+                // 非表示 Stage に接続された状態でも Popup.show を呼ばず表示しない
+                val hiddenStage = Stage()
+                hiddenStage.scene = detached.scene
+                slash.update(detached, "見")
+                links.show(detached, 0, listOf(PageLinkMenu.Choice(dummyPage, "ダミー")))
+                assertFalse(slash.isShowing())
+                assertFalse(links.isShowing())
+            } finally {
+                detached.dispose()
+            }
+            null
+        }
+    }
+
+    @Test
+    fun sidebarTodayButtonUpdatesDynamicallyWhenDateAdvances() {
+        var fakeToday = LocalDate.of(2026, 12, 31)
+        var openTodayCalls = 0
+        val actions = object : Sidebar.Actions {
+            override fun open(p: Page) {}
+            override fun openToday() {
+                openTodayCalls++
+            }
+            override fun newPage(parentId: String?) {}
+            override fun trash(p: Page) {}
+            override fun showTrash() {}
+            override fun showSearch() {}
+            override fun exportPage(p: Page) {}
+            override fun exportTree(p: Page) {}
+            override fun pageMoved() {}
+        }
+        fx {
+            val sb = Sidebar(services, actions) { fakeToday }
+            assertEquals("📅  今日 · 12月31日", sb.todayButton().text)
+
+            // 日付が進んで reload すると「今日」ボタンの表示が翌日に更新される
+            fakeToday = LocalDate.of(2027, 1, 1)
+            sb.reload(null)
+            assertEquals("📅  今日 · 1月1日", sb.todayButton().text)
+
+            // さらに日付が進んだ状態でボタンを押しても最新の当日へ更新される
+            fakeToday = LocalDate.of(2027, 1, 2)
+            sb.todayButton().fire()
+            assertEquals("📅  今日 · 1月2日", sb.todayButton().text)
+            assertEquals(1, openTodayCalls)
+            null
+        }
+    }
+
+    @Test
+    fun preferencesLastPageKeyIsolatesPerDataDirAndCleansUp() {
+        val prefs = Preferences.userNodeForPackage(MainWindow::class.java)
+        val firstKey = MainWindow.lastPageKey()
+        val currentPageId = fx { window.editor().page()!!.id }
+        assertEquals(currentPageId, prefs.get(firstKey, null))
+
+        val altDir = dir.resolve("alt-data-dir")
+        val prevProp = System.getProperty("dearnotes.dataDir")
+        val altStage = fx { Stage() }
+        try {
+            System.setProperty("dearnotes.dataDir", altDir.toString())
+            val secondKey = MainWindow.lastPageKey()
+            assertNotEquals(firstKey, secondKey)
+            assertNull(prefs.get(secondKey, null))
+
+            val altPage = pages.create(null, "別フォルダページ")
+            fx {
+                val altWindow = MainWindow(altStage, services)
+                altWindow.open(altPage)
+                null
+            }
+            settle()
+            assertEquals(altPage.id, prefs.get(secondKey, null))
+            // 元の dataDir の記憶は上書きされない
+            assertEquals(currentPageId, prefs.get(firstKey, null))
+            prefs.remove(secondKey)
+            assertNull(prefs.get(secondKey, null))
+        } finally {
+            fx {
+                altStage.close()
+                Errors.setOwner(stage)
+                null
+            }
+            if (prevProp != null) System.setProperty("dearnotes.dataDir", prevProp)
+        }
+    }
+
+    @Test
+    fun imePartialCommitThenCancelPreservesCommittedTextAndUpdatesBlock() {
+        focusFirstBlock()
+        fx {
+            val area = current().area()
+            fireIme(area, "きょうとへ", "")
+            // 「京都」だけ部分確定し、「へ」は未確定のまま
+            fireIme(area, "へ", "京都")
+            assertEquals("", current().block().text)
+            // 未確定の「へ」をキャンセル（空確定）すると、確定済み「京都」が本文へ反映される
+            fireIme(area, "", "")
+            null
+        }
+        settle()
+        assertEquals("京都", fx { current().block().text })
+        fx {
+            val area = current().area()
+            for (i in 0 until area.length) {
+                assertFalse(area.getStyleOfChar(i).contains(ImeArea.COMPOSED))
+            }
             null
         }
     }

@@ -37,6 +37,7 @@ import kotlinx.datetime.todayIn
 class MainWindow(private val stage: Stage, private val s: Services) : Sidebar.Actions, PageEditor.Navigator {
 
     private val prefs = Preferences.userNodeForPackage(MainWindow::class.java)
+    private val lastPageKey = lastPageKey()
     private val sidebar = Sidebar(s, this)
     private val editor = PageEditor(s, this)
     private val outline = OutlinePanel(editor::jumpTo)
@@ -104,6 +105,14 @@ class MainWindow(private val stage: Stage, private val s: Services) : Sidebar.Ac
 
         s.saver.setListener { saveIndicator.show(it) }
         Errors.setOwner(stage)
+        // 日付をまたいで起動し続けた場合でも、ウィンドウ再フォーカス時に「今日」表示を更新する
+        stage.focusedProperty().addListener { _, _, focused ->
+            if (focused) sidebar.refreshTodayLabel()
+        }
+        stage.setOnHidden {
+            searchDialog?.hide()
+            trashDialog?.hide()
+        }
         stage.setOnCloseRequest { e ->
             if (!flushAll()) e.consume()
         }
@@ -162,7 +171,7 @@ class MainWindow(private val stage: Stage, private val s: Services) : Sidebar.Ac
     /** 起動時: 前回のページ、なければ今日の日記を開く。 */
     fun openInitialPage() {
         sidebar.reload(null)
-        val last = prefs.get(LAST_PAGE, null)
+        val last = prefs.get(lastPageKey, null)
         var page = if (last == null) {
             null
         } else {
@@ -186,7 +195,8 @@ class MainWindow(private val stage: Stage, private val s: Services) : Sidebar.Ac
             sidebar.select(current?.id)
             return false
         }
-        prefs.put(LAST_PAGE, p.id)
+        prefs.put(lastPageKey, p.id)
+        sidebar.refreshTodayLabel()
         sidebar.select(p.id)
         updateHeader(p)
         return true
@@ -365,14 +375,12 @@ class MainWindow(private val stage: Stage, private val s: Services) : Sidebar.Ac
     }
 
     companion object {
-        // 別のデータフォルダで試すときは、前回のページも別に覚える
-        private val LAST_PAGE: String = if (System.getProperty("dearnotes.dataDir") == null) {
-            "lastPageId"
-        } else {
-            "lastPageId@" + Integer.toHexString(System.getProperty("dearnotes.dataDir").hashCode())
-        }
         private const val EXPORT_DIR = "exportDir"
         private val ICON_SIZES = listOf(16, 32, 48, 64, 128, 256)
+
+        /** 別のデータフォルダごとに前回のページを覚えるキー。静的キャッシュせず都度解決する。 */
+        internal fun lastPageKey(dataDir: String? = System.getProperty("dearnotes.dataDir")): String =
+            if (dataDir == null) "lastPageId" else "lastPageId@" + Integer.toHexString(dataDir.hashCode())
 
         /** ウィンドウのアイコン（Windows のタイトルバーとタスクバー）。packaging/icon/build-icons.py が作る。 */
         internal fun icons(): List<Image> = ICON_SIZES.mapNotNull { px ->

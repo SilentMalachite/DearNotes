@@ -73,8 +73,13 @@ internal class PageLinkMenu(
             close(v)
             return
         }
-        val b = v.caretBounds() ?: return
-        val scene = v.scene ?: return
+        val b = v.caretBounds()
+        val window = v.scene?.window
+        // シーンやウィンドウが未接続・非表示のときは Popup.show を呼ばずに安全に閉じる
+        if (b == null || window == null || !window.isShowing) {
+            close(v)
+            return
+        }
         target = v
         this.from = from
         list.items.setAll(items)
@@ -84,7 +89,7 @@ internal class PageLinkMenu(
             popup.x = b.minX
             popup.y = b.maxY + 4
         } else {
-            popup.show(scene.window, b.minX, b.maxY + 4)
+            popup.show(window, b.minX, b.maxY + 4)
         }
     }
 

@@ -14,6 +14,8 @@ import app.dearnotes.model.BlockType
 import app.dearnotes.model.Mark
 import app.dearnotes.model.Page
 import app.dearnotes.model.SortKeys
+import java.text.BreakIterator
+import java.util.Locale
 import java.util.concurrent.TimeUnit
 import javafx.animation.PauseTransition
 import javafx.application.Platform
@@ -68,6 +70,8 @@ internal class PageEditor(
     private var lastFocused: BlockView? = null
     private var outlineListener: () -> Unit = {}
     private var loadingTitle = false
+    /** ページ連続切替時の遅延フォーカス競合を防ぐ世代カウンタ。 */
+    private var openGeneration = 0L
 
     init {
         styleClass.add("page-editor")
@@ -196,14 +200,17 @@ internal class PageEditor(
         backlinks.show(Errors.get("このページへのリンクを読む") { s.blocks.linksTo(opened.id) } ?: emptyList())
         scrollPane?.vvalue = 0.0
 
+        val gen = ++openGeneration
         Platform.runLater {
-            if (page?.id != opened.id) return@runLater
+            if (openGeneration != gen || page?.id != opened.id) return@runLater
             if (focusBlockId != null) {
                 val target = views.firstOrNull { it.block().id == focusBlockId }
                 if (target != null) {
                     reveal(target)
                     target.focusEnd()
-                    Platform.runLater { if (isActive(target)) ensureVisible(target) }
+                    Platform.runLater {
+                        if (openGeneration == gen && isActive(target)) ensureVisible(target)
+                    }
                 }
             } else if (opened.title.let { it == null || it.isJavaBlank() } && !opened.isDaily()) {
                 title.requestFocus()
@@ -920,15 +927,9 @@ internal class PageEditor(
         val dialog = TextInputDialog(current.icon ?: "")
         dialog.title = "アイコン"
         dialog.headerText = "絵文字を1つ入れてください（空にすると元に戻ります）"
-        dialog.initOwner(scene.window)
+        scene?.window?.let { dialog.initOwner(it) }
         val icon = dialog.showAndWait().orElse(null) ?: return
-        val value = if (icon.isJavaBlank()) {
-            null
-        } else {
-            val sb = StringBuilder()
-            for (cp in icon.strip().codePoints().limit(2).toArray()) sb.appendCodePoint(cp)
-            sb.toString()
-        }
+        val value = normalizeIcon(icon)
         if (Errors.run("アイコンを変更") { s.pages.setIcon(current.id, value) }) {
             val updated = Errors.get("ページを読む") { s.pages.get(current.id) }
             if (updated != null) {
@@ -939,6 +940,16 @@ internal class PageEditor(
     }
 
     companion object {
+        /** 入力文字列からアイコン用の先頭 1 書記素クラスタを取り出す。空白のみなら null。 */
+        internal fun normalizeIcon(raw: String?): String? {
+            if (raw == null || raw.isJavaBlank()) return null
+            val trimmed = raw.strip()
+            val it = BreakIterator.getCharacterInstance(Locale.ROOT)
+            it.setText(trimmed)
+            val end = it.next()
+            return if (end == BreakIterator.DONE) trimmed else trimmed.substring(0, end)
+        }
+
         private fun toBlock(base: Block, line: PasteParser.Line, baseIndent: Int): Block =
             base.withType(line.type)
                 .withContent(line.text, emptyList())
